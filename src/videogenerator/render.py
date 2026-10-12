@@ -126,6 +126,33 @@ def render(project: dict, output: Path, asset_root: Path | None = None) -> Path:
                     else:
                         chain = (f"color=c=0x17233d:s={width}x{height}:r={fps}:d={length},"
                                  f"format=rgba,{text_filter(segment['text'], True)}")
+                    for effect in segment.get("effects", []):
+                        effect_type = effect["type"]
+                        if effect_type == "grayscale":
+                            chain += ",hue=s=0"
+                        elif effect_type == "blur":
+                            chain += f",boxblur={effect.get('radius', 1)}:1"
+                        elif effect_type == "sharpen":
+                            chain += f",unsharp=5:5:{effect.get('amount', 1)}:5:5:0"
+                        elif effect_type == "eq":
+                            chain += (
+                                f",eq=brightness={effect.get('brightness', 0)}:"
+                                f"contrast={effect.get('contrast', 1)}:"
+                                f"saturation={effect.get('saturation', 1)}"
+                            )
+                    transform = segment.get(
+                        "transform",
+                        {"x": 0, "y": 0, "scale": 1, "rotation": 0, "opacity": 1},
+                    )
+                    if transform.get("scale", 1) != 1:
+                        chain += f",scale=iw*{transform['scale']}:ih*{transform['scale']}"
+                    if transform.get("rotation", 0):
+                        radians = transform["rotation"] * math.pi / 180
+                        chain += (
+                            f",rotate={radians}:c=none:ow=rotw(iw):oh=roth(ih)"
+                        )
+                    if transform.get("opacity", 1) != 1:
+                        chain += f",colorchannelmixer=aa={transform['opacity']}"
                     if segment["fade_in"]:
                         chain += f",fade=t=in:st=0:d={segment['fade_in']}:alpha=1"
                     if segment["fade_out"]:
@@ -133,8 +160,12 @@ def render(project: dict, output: Path, asset_root: Path | None = None) -> Path:
                                   f"d={segment['fade_out']}:alpha=1")
                     filters.append(chain + f",setpts=PTS+{start}/TB[{label}]")
                     previous = "base" if visual_index == 0 else f"composite{visual_index - 1}"
+                    x = transform.get("x", 0)
+                    y = transform.get("y", 0)
                     filters.append(
-                        f"[{previous}][{label}]overlay=eof_action=pass:repeatlast=0:"
+                        f"[{previous}][{label}]overlay="
+                        f"x=(main_w-overlay_w)/2+{x}:y=(main_h-overlay_h)/2+{y}:"
+                        f"eof_action=pass:repeatlast=0:"
                         f"enable='gte(t,{start})*lt(t,{end})'[composite{visual_index}]"
                     )
                     visual_index += 1
@@ -175,8 +206,18 @@ def render(project: dict, output: Path, asset_root: Path | None = None) -> Path:
         inputs = "".join(f"[{label}]" for label in ["silence"] + audio_labels)
         filters.append(
             f"{inputs}amix=inputs={len(audio_labels) + 1}:normalize=0:"
-            f"duration=longest,atrim=duration={duration}[audio]"
+            f"duration=longest,atrim=duration={duration}[mixed]"
         )
+        audio_settings = project["settings"].get("audio", {})
+        if audio_settings.get("normalize", False):
+            target = audio_settings.get("target_lufs", -14)
+            peak = audio_settings.get("true_peak", -1)
+            lra = audio_settings.get("lra", 11)
+            filters.append(
+                f"[mixed]loudnorm=I={target}:TP={peak}:LRA={lra}[audio]"
+            )
+        else:
+            filters.append("[mixed]anull[audio]")
         filter_file = scratch / "filters.txt"
         filter_file.write_text(";\n".join(filters), encoding="utf-8")
         rendered = scratch / ("rendered" + output.suffix.lower())

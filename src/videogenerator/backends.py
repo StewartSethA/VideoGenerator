@@ -45,6 +45,51 @@ _CATALOG = [
          inputs=["image"], device="cuda", vram_gb=10, ram_gb=16,
          seconds_per_second=15, steps=50, size_multiple=32,
          frame_multiple=8, fps=24),
+    dict(id="wan22_t2v", name="Wan 2.2 T2V A14B", kind="video",
+         model_id="Wan-AI/Wan2.2-T2V-A14B-Diffusers", pipeline="DiffusionPipeline",
+         license="Apache-2.0", generative=True, inputs=[], device="cuda",
+         vram_gb=24, ram_gb=48, seconds_per_second=30, steps=30,
+         size_multiple=16, frame_multiple=4, fps=24, prefer_bf16=True),
+    dict(id="wan22_i2v", name="Wan 2.2 I2V A14B", kind="video",
+         model_id="Wan-AI/Wan2.2-I2V-A14B-Diffusers", pipeline="DiffusionPipeline",
+         license="Apache-2.0", generative=True, inputs=["image"], device="cuda",
+         vram_gb=24, ram_gb=48, seconds_per_second=30, steps=30,
+         size_multiple=16, frame_multiple=4, fps=24, prefer_bf16=True),
+    dict(id="wan22_ti2v", name="Wan 2.2 TI2V 5B", kind="video",
+         model_id="Wan-AI/Wan2.2-TI2V-5B-Diffusers", pipeline="DiffusionPipeline",
+         license="Apache-2.0", generative=True, inputs=["image"], device="cuda",
+         vram_gb=12, ram_gb=32, seconds_per_second=20, steps=30,
+         size_multiple=16, frame_multiple=4, fps=24, prefer_bf16=True),
+    dict(id="hunyuan15_t2v", name="HunyuanVideo 1.5 T2V", kind="video",
+         model_id="hunyuanvideo-community/HunyuanVideo-1.5-480p_t2v",
+         pipeline="DiffusionPipeline", license="Tencent Hunyuan Community License",
+         generative=True, inputs=[], device="cuda", vram_gb=16, ram_gb=32,
+         seconds_per_second=25, steps=30, size_multiple=16,
+         frame_multiple=4, fps=15, prefer_bf16=True),
+    dict(id="hunyuan15_i2v", name="HunyuanVideo 1.5 I2V", kind="video",
+         model_id="hunyuanvideo-community/HunyuanVideo-1.5-480p_i2v",
+         pipeline="DiffusionPipeline", license="Tencent Hunyuan Community License",
+         generative=True, inputs=["image"], device="cuda", vram_gb=16, ram_gb=32,
+         seconds_per_second=25, steps=30, size_multiple=16,
+         frame_multiple=4, fps=24, prefer_bf16=True),
+    dict(id="ltx2", name="LTX-2", kind="video",
+         model_id="Lightricks/LTX-2", pipeline="LTX2Pipeline",
+         condition_pipeline="LTX2ConditionPipeline",
+         license="LTX-2 Community License Agreement", generative=True,
+         inputs=["image"], keyframes=True, device="cuda", vram_gb=24, ram_gb=48,
+         seconds_per_second=20, steps=30, size_multiple=32,
+         frame_multiple=8, fps=24, prefer_bf16=True),
+    dict(id="qwen_image", name="Qwen-Image", kind="image",
+         model_id="Qwen/Qwen-Image", pipeline="DiffusionPipeline",
+         image_pipeline="QwenImageImg2ImgPipeline", license="Apache-2.0",
+         generative=True, inputs=["image"], device="cuda", vram_gb=16, ram_gb=32,
+         seconds_per_second=8, steps=50, size_multiple=8, prefer_bf16=True),
+    dict(id="flux2_klein", name="FLUX.2 Klein 4B", kind="image",
+         model_id="black-forest-labs/FLUX.2-klein-4B",
+         pipeline="Flux2KleinPipeline", image_pipeline="Flux2KleinPipeline",
+         license="Apache-2.0", generative=True, inputs=["image"], device="cuda",
+         vram_gb=10, ram_gb=24, seconds_per_second=5, steps=4,
+         size_multiple=8, prefer_bf16=True),
     dict(id="musicgen", name="MusicGen small", kind="audio",
          model_id="facebook/musicgen-small", license="CC-BY-NC-4.0",
          generative=True, inputs=[], device="cpu or cuda", vram_gb=2,
@@ -171,7 +216,7 @@ def _load_model(backend_id: str, device: str, image_input: bool):
     torch = _dependency("torch")
     dtype = torch.float32
     if device == "cuda":
-        dtype = torch.bfloat16 if backend_id in {"wan", "ltx"} else torch.float16
+        dtype = torch.bfloat16 if backend.get("prefer_bf16") or backend_id in {"wan", "ltx"} else torch.float16
     kwargs = dict(torch_dtype=dtype, use_safetensors=True, token=_token())
     if backend_id in {"musicgen", "bark"}:
         transformers = _dependency("transformers")
@@ -192,9 +237,16 @@ def _load_model(backend_id: str, device: str, image_input: bool):
         model = cls.from_pretrained(backend["model_id"], trust_remote_code=False, **kwargs)
         return model.to(device), processor
     diffusers = _dependency("diffusers")
-    cls = getattr(diffusers, "LTXImageToVideoPipeline" if image_input else backend["pipeline"])
+    if backend_id == "ltx":
+        cls = getattr(diffusers, "LTXImageToVideoPipeline" if image_input else backend["pipeline"])
+    elif backend_id == "ltx2" and image_input:
+        cls = getattr(diffusers, backend["condition_pipeline"])
+    elif image_input and backend.get("image_pipeline"):
+        cls = getattr(diffusers, backend["image_pipeline"])
+    else:
+        cls = getattr(diffusers, backend["pipeline"])
     if backend_id == "wan":
-        # Wan's VAE needs float32 even when the transformer uses bfloat16.
+        # Wan 2.1's VAE needs float32 even when the transformer uses bfloat16.
         kwargs["vae"] = diffusers.AutoencoderKLWan.from_pretrained(
             backend["model_id"], subfolder="vae", torch_dtype=torch.float32,
             use_safetensors=True, token=_token())
@@ -244,8 +296,16 @@ def generate(backend_id: str, prompt: str, output: Path, *, seed: int = 0,
         raise ValueError("duration must be finite and positive")
     if not isinstance(seed, int) or seed < 0:
         raise ValueError("seed must be a nonnegative integer")
-    if keyframes:
+    if keyframes and not backend.get("keyframes"):
         raise ValueError(f"{backend_id} does not support keyframes")
+    if keyframes:
+        if not isinstance(keyframes, list) or len(keyframes) > 64:
+            raise ValueError("keyframes must be a list with at most 64 entries")
+        for keyframe in keyframes:
+            if (not isinstance(keyframe, dict) or type(keyframe.get("frame")) is not int
+                    or keyframe["frame"] < 0 or not isinstance(keyframe.get("path"), str)
+                    or not Path(keyframe["path"]).is_file()):
+                raise ValueError("Invalid keyframes")
     if input_path is not None and "image" not in backend["inputs"]:
         raise ValueError(f"{backend_id} does not support an input image")
     if input_path is not None and not Path(input_path).is_file():
@@ -276,7 +336,9 @@ def generate(backend_id: str, prompt: str, output: Path, *, seed: int = 0,
     if device == "cuda" and backend_id in {"wan", "ltx"} and not torch.cuda.is_bf16_supported():
         raise RuntimeError(f"{backend_id} requires a CUDA GPU supporting bfloat16 (Ampere or newer).")
     try:
-        model, processor = _load_model(backend_id, device, input_path is not None)
+        model, processor = _load_model(
+            backend_id, device, input_path is not None or bool(keyframes)
+        )
     except (ImportError, AttributeError) as exc:
         raise RuntimeError("Missing or outdated optional model dependencies. "
                            "Run uv sync --extra models.") from exc
@@ -298,18 +360,33 @@ def generate(backend_id: str, prompt: str, output: Path, *, seed: int = 0,
     options = dict(prompt=prompt, width=width, height=height,
                    num_inference_steps=backend["steps"],
                    generator=torch.Generator(device="cpu").manual_seed(seed))
+    utils = _dependency("diffusers.utils")
+    if input_path is not None:
+        options["image"] = utils.load_image(str(input_path))
     if backend["kind"] == "image":
         model(**options).images[0].save(output)
     else:
         frames = _video_frames(backend, duration)
         options["num_frames"] = frames
-        if backend_id == "ltx":
+        if backend_id in {"ltx", "ltx2"}:
             options["frame_rate"] = backend["fps"]
-            if input_path is not None:
-                options["image"] = _dependency("diffusers.utils").load_image(str(input_path))
+        if backend_id == "ltx2" and keyframes:
+            condition_module = _dependency(
+                "diffusers.pipelines.ltx2.pipeline_ltx2_condition"
+            )
+            ratio = getattr(getattr(model, "vae", None), "config", None)
+            ratio = getattr(ratio, "temporal_compression_ratio", 8)
+            conditions = []
+            for keyframe in keyframes:
+                index = -1 if keyframe["frame"] >= frames - 1 else keyframe["frame"] // max(1, ratio)
+                conditions.append(condition_module.LTX2VideoCondition(
+                    frames=utils.load_image(keyframe["path"]), index=index, strength=1.0
+                ))
+            options["conditions"] = conditions
+            options.pop("image", None)
         result = model(**options)
-        _dependency("diffusers.utils").export_to_video(
-            result.frames[0], str(output), fps=frames / duration)
+        video = result.frames[0] if hasattr(result, "frames") else result.images[0]
+        utils.export_to_video(video, str(output), fps=frames / duration)
     return output
 
 

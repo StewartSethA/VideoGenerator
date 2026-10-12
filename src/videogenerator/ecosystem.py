@@ -11,7 +11,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import tomllib
 from importlib.resources import files
 from pathlib import Path
@@ -64,6 +63,50 @@ def _model(name: str) -> dict:
         raise ValueError(f"Unknown ecosystem model {name!r}") from exc
 
 
+def _launch_from_spec(name: str, spec: dict, port: int | None = None) -> tuple[list[str], Path]:
+    root = framework_root(name)
+    template = spec.get("launch")
+    if not template:
+        return [], root
+    port = port or 7860
+    if template.startswith("uv "):
+        return shlex.split(template.format(port=port)), root
+    env = framework_env(name)
+    py = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    expanded = template.format(port=port).replace(
+        "python ", shlex.quote(str(py)) + " ", 1
+    )
+    return shlex.split(expanded), root
+
+
+def framework_plan(name: str, port: int | None = None) -> dict:
+    spec = _framework(name)
+    launch, root = _launch_from_spec(name, spec, port)
+    return {
+        "name": name,
+        "repo": spec["repo"],
+        "root": str(root),
+        "environment": str(framework_env(name)),
+        "python": str(spec.get("python", "3.11")),
+        "install": spec.get("install", "requirements"),
+        "launch": launch,
+        "native_ui": bool(spec.get("native_ui")),
+    }
+
+
+def model_plan(name: str, revision: str | None = None) -> dict:
+    spec = _model(name)
+    return {
+        "name": name,
+        "provider": spec.get("provider"),
+        "repo_id": spec.get("repo_id"),
+        "revision": revision,
+        "destination": str(model_root(name)),
+        "framework": spec.get("framework"),
+        "license": spec.get("license"),
+    }
+
+
 def install_framework(name: str, update: bool = False) -> Path:
     spec = _framework(name)
     root = framework_root(name)
@@ -107,18 +150,9 @@ def launch_command(name: str, port: int | None = None) -> tuple[list[str], Path]
     root = framework_root(name)
     if not root.exists():
         raise RuntimeError(f"{name} is not installed; run: videogenerator framework install {name}")
-    template = spec.get("launch")
-    if not template:
+    command, root = _launch_from_spec(name, spec, port)
+    if not command:
         raise RuntimeError(f"{name} has no declared native UI launcher")
-    port = port or 7860
-
-    if template.startswith("uv "):
-        command = shlex.split(template.format(port=port))
-    else:
-        env = framework_env(name)
-        py = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        expanded = template.format(port=port).replace("python ", shlex.quote(str(py)) + " ", 1)
-        command = shlex.split(expanded)
     return command, root
 
 

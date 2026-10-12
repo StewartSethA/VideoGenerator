@@ -18,3 +18,12 @@ button:focus-visible,a:focus-visible { outline:3px solid #ffdd88; } button:disab
 #preview { width:100%; max-height:400px; background:#101722; margin-top:12px; }
 pre { white-space:pre-wrap; overflow-wrap:anywhere; } [hidden] { display:none !important; }
 @media(max-width:600px) { .lane { grid-template-columns:110px 1fr; } #ruler { margin-left:118px; } header,main { padding:10px; } }
+
+#playhead { width: 100%; }
+.take-group { border-top: 1px solid #334155; padding: .45rem 0; }
+.take-group strong { display: inline-block; min-width: 9rem; }
+.take-group button.active { outline: 2px solid currentColor; }
+.span { position: absolute; overflow: hidden; touch-action: none; }
+.resize-handle { position: absolute; right: 0; top: 0; width: 10px; height: 100%;
+  cursor: ew-resize; background: rgba(255,255,255,.22); }
+.spans { position: relative; }
