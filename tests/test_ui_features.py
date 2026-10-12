@@ -12,8 +12,9 @@ class UiFeatureTests(unittest.TestCase):
         self.assertIn('id="effects"',self.html)
         self.assertIn('id="normalize-audio"',self.html)
         self.assertIn('id="target-lufs"',self.html)
+        self.assertIn('input.id = `transform-${name}`', self.js)
         for field in ("x","y","scale","rotation","opacity"):
-            self.assertIn(f'transform-{field}',self.js)
+            self.assertIn(field, self.js)
 
     def test_keyframes_are_presented_as_supported_feature_not_stub_warning(self):
         self.assertIn('id="keyframes"',self.html)
