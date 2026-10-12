@@ -1,0 +1,123 @@
+[models.wan22_t2v_a14b]
+kind = "video"
+provider = "huggingface"
+repo_id = "Wan-AI/Wan2.2-T2V-A14B"
+framework = "wan22"
+license = "Apache-2.0"
+notes = "High-quality text-to-video checkpoint; very large download."
+
+[models.wan22_i2v_a14b]
+kind = "video"
+provider = "huggingface"
+repo_id = "Wan-AI/Wan2.2-I2V-A14B"
+framework = "wan22"
+license = "Apache-2.0"
+notes = "Image-to-video checkpoint for reference-driven shots."
+
+[models.wan22_ti2v_5b]
+kind = "video"
+provider = "huggingface"
+repo_id = "Wan-AI/Wan2.2-TI2V-5B"
+framework = "wan22"
+license = "Apache-2.0"
+notes = "Smaller unified text/image-to-video checkpoint."
+
+[models.hunyuanvideo15]
+kind = "video"
+provider = "huggingface"
+repo_id = "tencent/HunyuanVideo-1.5"
+framework = "hunyuan15"
+license = "Tencent Hunyuan Community License"
+notes = "Text/image-to-video family; check current upstream terms before use."
+
+[models.ltx2]
+kind = "audiovisual"
+provider = "huggingface"
+repo_id = "Lightricks/LTX-2"
+framework = "ltx"
+license = "Checkpoint-specific"
+notes = "Audio/video generation and reference-conditioned workflows."
+
+[models.qwen_image]
+kind = "image"
+provider = "huggingface"
+repo_id = "Qwen/Qwen-Image"
+framework = "diffusers"
+license = "Apache-2.0"
+notes = "Text-to-image and image editing family."
+
+[models.flux2_klein_4b]
+kind = "image"
+provider = "huggingface"
+repo_id = "black-forest-labs/FLUX.2-klein-4B"
+framework = "diffusers"
+license = "Apache-2.0"
+notes = "Compact FLUX.2 checkpoint with text-to-image and multi-reference editing support."
+
+[models.acestep15]
+kind = "music"
+provider = "huggingface"
+repo_id = "ACE-Step/Ace-Step1.5"
+framework = "acestep"
+license = "MIT"
+notes = "Music generation; upstream application can auto-download its preferred weights."
+
+[frameworks.comfyui]
+repo = "https://github.com/comfyanonymous/ComfyUI.git"
+python = "3.12"
+install = "requirements"
+launch = "python main.py --listen 127.0.0.1 --port {port}"
+native_ui = true
+notes = "General node/workflow engine with broad image/video/audio model support."
+
+[frameworks.wangp]
+repo = "https://github.com/DeepBeepMeep/Wan2GP.git"
+python = "3.11"
+install = "requirements"
+launch = "python wgp.py --server-port {port}"
+native_ui = true
+notes = "Local video-generation front end; launch flags may change upstream."
+
+[frameworks.wan22]
+repo = "https://github.com/Wan-Video/Wan2.2.git"
+python = "3.11"
+install = "requirements"
+native_ui = false
+notes = "Reference implementation for Wan 2.2."
+
+[frameworks.hunyuan15]
+repo = "https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5.git"
+python = "3.11"
+install = "requirements"
+native_ui = false
+notes = "Reference implementation for HunyuanVideo 1.5."
+
+[frameworks.ltx]
+repo = "https://github.com/Lightricks/LTX-Video.git"
+python = "3.11"
+install = "pyproject"
+native_ui = false
+notes = "Reference implementation for LTX video models."
+
+[frameworks.mmaudio]
+repo = "https://github.com/hkchengrex/MMAudio.git"
+python = "3.11"
+install = "requirements"
+native_ui = false
+notes = "Video/text-conditioned sound-effect generation."
+
+[frameworks.acestep]
+repo = "https://github.com/ace-step/ACE-Step-1.5.git"
+python = "3.12"
+install = "uv"
+launch = "uv run acestep"
+native_ui = true
+notes = "Music generation UI/API; upstream models auto-download on first use."
+
+[frameworks.moneyprinterturbo]
+repo = "https://github.com/harry0703/MoneyPrinterTurbo.git"
+python = "3.11"
+install = "requirements"
+launch = "python webui/Main.py"
+native_ui = true
+notes = "Script-to-short-video application. Some features can use hosted APIs."

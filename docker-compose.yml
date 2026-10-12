@@ -1,0 +1,10 @@
+services:
+  videogenerator:
+    build: .
+    network_mode: host
+    environment:
+      - VIDEOGENERATOR_HOME=/data/.cache/videogenerator
+      - HF_HOME=/data/.cache/huggingface
+    volumes:
+      - ./projects:/data
+    command: ["/app/.venv/bin/videogenerator", "serve", "--workspace", "/data", "--no-browser"]

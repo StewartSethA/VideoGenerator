@@ -53,7 +53,23 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("backends", nargs="+")
     item = commands.add_parser("setup", help="Check system tools and optionally install/cache models")
     item.add_argument("--models", nargs="*", default=[])
-    commands.add_parser("backends", help="List capabilities, licenses and model IDs")
+    commands.add_parser("backends", help="List built-in capabilities, licenses and model IDs")
+    commands.add_parser("ecosystem", help="List optional external frameworks and modern model checkpoints")
+    commands.add_parser("ecosystem-status", help="Show installed external frameworks and cached models")
+    item = commands.add_parser("framework", help="Install, update or launch an external native framework")
+    framework_commands = item.add_subparsers(dest="framework_command", required=True)
+    install = framework_commands.add_parser("install")
+    install.add_argument("name")
+    install.add_argument("--update", action="store_true")
+    launch = framework_commands.add_parser("launch")
+    launch.add_argument("name")
+    launch.add_argument("--port", type=int)
+    launch.add_argument("--no-install", action="store_true")
+    model = commands.add_parser("model", help="Cache an optional external model checkpoint")
+    model_commands = model.add_subparsers(dest="model_command", required=True)
+    model_install = model_commands.add_parser("install")
+    model_install.add_argument("name")
+    model_install.add_argument("--revision")
     commands.add_parser("hardware", help="Detect CPU/RAM/NVIDIA GPU hardware")
     item = commands.add_parser("estimate", help="Heuristic hardware-aware generation estimate")
     item.add_argument("project", type=Path)
@@ -120,6 +136,22 @@ def main(argv: list[str] | None = None) -> int:
             print("Ready")
         elif args.command == "backends":
             print(json.dumps(backends.catalog(), indent=2))
+        elif args.command in {"ecosystem", "ecosystem-status", "framework", "model"}:
+            from . import ecosystem
+            if args.command == "ecosystem":
+                print(ecosystem.format_catalog())
+            elif args.command == "ecosystem-status":
+                print(json.dumps(ecosystem.status(), indent=2))
+            elif args.command == "framework":
+                if args.framework_command == "install":
+                    print(ecosystem.install_framework(args.name, update=args.update))
+                else:
+                    process = ecosystem.launch_framework(
+                        args.name, args.port, install=not args.no_install
+                    )
+                    print(f"Started {args.name} as PID {process.pid}")
+            elif args.model_command == "install":
+                print(ecosystem.install_model(args.name, revision=args.revision))
         elif args.command == "hardware":
             print(json.dumps(backends.hardware(), indent=2))
         elif args.command == "estimate":
