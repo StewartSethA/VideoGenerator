@@ -17,11 +17,13 @@ class RoutingTests(unittest.TestCase):
         self.assertIn(choose_backend("video"), {"wan", "ltx", "cogvideox"})
         self.assertEqual(choose_backend("video", input_kinds=["image"]), "ltx")
 
-    def test_router_never_returns_nonexecutable_backend_by_default(self):
+    def test_router_uses_executable_ltx2_for_multiple_keyframes(self):
         result = candidates("video", input_kinds=["image"], keyframes=2)
         self.assertTrue(any(not item["executable"] for item in result))
-        with self.assertRaisesRegex(ValueError, "No executable backend"):
-            choose_backend("video", input_kinds=["image"], keyframes=2)
+        self.assertEqual(
+            choose_backend("video", input_kinds=["image"], keyframes=2),
+            "ltx2",
+        )
 
     def test_router_can_include_external_candidates_explicitly(self):
         self.assertEqual(
