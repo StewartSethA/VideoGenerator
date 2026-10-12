@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VideoGenerator</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/ui.js" defer></script>
+</head>
+<body>
+  <header><h1>VideoGenerator</h1><p>Local storyboard · unlimited tracks · optional AI · MP4 export</p></header>
+  <main>
+    <section class="panel">
+      <label>Prompt <textarea id="prompt" rows="2" placeholder="Describe your video"></textarea></label>
+      <label>Optional script <textarea id="script" rows="2" placeholder="One scene per sentence or line"></textarea></label>
+      <div class="controls">
+        <label>Seconds / scene <input id="duration" type="number" min="0.1" step="0.1" value="4"></label>
+        <label>Width <input id="width" type="number" value="1280"></label>
+        <label>Height <input id="height" type="number" value="720"></label>
+        <label>FPS <input id="fps" type="number" value="24"></label>
+        <label>Upload assets <input id="upload" type="file" multiple accept="image/png,image/jpeg,image/webp,video/*,audio/*"></label>
+      </div>
+      <button id="create">Build storyboard</button>
+      <button id="save">Save edits</button>
+      <button id="export">Export MP4</button>
+      <button id="estimate">Estimate</button>
+      <a id="download" href="/media/export" download="video.mp4" hidden>Download export</a>
+      <p id="status" role="status" aria-live="polite">Loading…</p>
+    </section>
+    <section class="panel">
+      <h2>Timeline</h2>
+      <p>Click a span to edit. Later enabled video tracks overlay earlier tracks. Disable alternatives to compare.</p>
+      <div id="ruler"></div>
+      <div id="tracks"></div>
+      <h3>Storyboard content bins</h3>
+      <div id="storyboard"></div>
+      <button id="add-video">Add video track</button><button id="add-audio">Add audio track</button>
+    </section>
+    <section class="panel" id="inspector" hidden>
+      <h2>Selected span</h2>
+      <div id="fields" class="controls"></div>
+      <label>Text / dialogue <textarea id="segment-text" rows="2"></textarea></label>
+      <label>Generation prompt <textarea id="segment-prompt" rows="2"></textarea></label>
+      <label>Keyframes (backend-dependent JSON; unsupported requests fail explicitly)
+        <textarea id="keyframes" rows="2">[]</textarea>
+      </label>
+      <button id="apply">Apply span edits</button>
+      <button id="duplicate">Duplicate as alternative track</button>
+      <button id="remove">Remove span</button>
+      <h3>Regenerate / later voice-over / score</h3>
+      <div class="controls">
+        <label>Backend <select id="backend"></select></label>
+        <label>Conditioning asset <select id="conditioning"></select></label>
+        <label>Seed <input id="seed" type="number" value="0"></label>
+      </div>
+      <button id="regenerate">Generate disabled alternative</button>
+      <button id="model-download">Cache backend weights</button>
+      <p id="backend-info"></p>
+    </section>
+    <section class="panel">
+      <h2>Assets & preview</h2>
+      <div id="assets"></div>
+      <video id="preview" controls preload="metadata"></video>
+      <p>Frame-accurate anchors: set start = frame / FPS, duration = frame count / FPS.</p>
+      <label>Captions / transcript JSON (seconds: start, duration, text)
+        <textarea id="captions" rows="4"></textarea>
+      </label>
+      <details><summary>Advanced project JSON / hardware estimate</summary>
+        <textarea id="project-json" rows="16"></textarea>
+        <button id="apply-json">Apply project JSON</button>
+        <pre id="details"></pre>
+      </details>
+    </section>
+  </main>
+</body>
+</html>
