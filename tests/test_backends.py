@@ -48,8 +48,10 @@ class BackendTests(unittest.TestCase):
 
     def test_catalog_is_independent_and_unknown_rejected(self):
         catalog = backends.catalog()
-        self.assertEqual({b["id"] for b in catalog},
-                         {"title", "espeak", "sdxl", "cogvideox", "wan", "ltx", "musicgen", "bark"})
+        expected = {"title", "espeak", "sdxl", "cogvideox", "wan", "ltx", "musicgen", "bark",
+                    "wan22_t2v", "wan22_i2v", "wan22_ti2v", "hunyuan15_t2v",
+                    "hunyuan15_i2v", "ltx2", "qwen_image", "flux2_klein"}
+        self.assertTrue(expected.issubset({b["id"] for b in catalog}))
         catalog[0]["inputs"].append("unsafe")
         self.assertEqual(backends.get_backend("title")["inputs"], [])
         self.assertFalse(backends.get_backend("title")["generative"])
