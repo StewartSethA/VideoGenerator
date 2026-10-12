@@ -17,6 +17,8 @@ class UiTakeTests(unittest.TestCase):
     def test_span_drag_and_resize_hooks_are_present(self):
         self.assertIn("pointerdown",self.js)
         self.assertIn("resize-handle",self.js)
+        self.assertIn('id="split-playhead"',self.html)
+        self.assertIn('id="crossfade-next"',self.html)
 
 
 if __name__=="__main__":
