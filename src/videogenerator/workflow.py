@@ -18,6 +18,14 @@ GENERATION_SIZES = {
     "cogvideox": (720, 480),
     "wan": (832, 480),
     "ltx": (768, 512),
+    "wan22_t2v": (832, 480),
+    "wan22_i2v": (832, 480),
+    "wan22_ti2v": (832, 480),
+    "hunyuan15_t2v": (832, 480),
+    "hunyuan15_i2v": (832, 480),
+    "ltx2": (768, 512),
+    "qwen_image": (1024, 1024),
+    "flux2_klein": (1024, 1024),
 }
 
 
@@ -71,7 +79,10 @@ def add_generation(project: dict, segment_id: str, backend: str, directory: Path
         if input_asset["kind"] != "image" or "image" not in spec.get("inputs", []):
             raise ValueError(f"{backend} does not accept this conditioning asset type")
 
-    effective_keyframes = keyframes
+    effective_keyframes = [
+        {**keyframe, "path": assets_by_id[keyframe["asset_id"]]["path"]}
+        for keyframe in keyframes
+    ]
     # A single first-frame reference can be mapped onto ordinary image-to-video backends.
     if keyframes and not spec.get("keyframes"):
         if (len(keyframes) == 1 and keyframes[0]["frame"] == 0
