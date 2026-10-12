@@ -32,6 +32,39 @@ function option(select, value, text) {
 function extent() {
   return Math.max(1, ...project.tracks.flatMap(t => t.segments.map(s => s.start + s.duration)));
 }
+function bindSpanDrag(span, track, segment, spans, bins) {
+  if (bins) return;
+  const handle = document.createElement("span");
+  handle.className = "resize-handle";
+  handle.title = "Drag to resize";
+  span.append(handle);
+  span.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    const resizing = event.target.classList.contains("resize-handle");
+    const originX = event.clientX;
+    const originStart = segment.start;
+    const originDuration = segment.duration;
+    const secondsPerPixel = extent() / Math.max(1, spans.getBoundingClientRect().width);
+    const frame = 1 / project.settings.fps;
+    const snap = value => Math.round(value / frame) * frame;
+    const move = moveEvent => {
+      const delta = snap((moveEvent.clientX - originX) * secondsPerPixel);
+      if (resizing) segment.duration = Math.max(frame, originDuration + delta);
+      else segment.start = Math.max(0, originStart + delta);
+      span.style.left = `${segment.start / extent() * 100}%`;
+      span.style.width = `${segment.duration / extent() * 100}%`;
+      span.title = `${segment.start.toFixed(3)}s – ${(segment.start + segment.duration).toFixed(3)}s`;
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      draw(); inspect(track, segment); status("Timeline edit ready to save");
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  });
+}
 function lane(track, bins = false) {
   const row = document.createElement("div"); row.className = `lane ${track.kind} ${track.enabled ? "" : "disabled"}`;
   const label = document.createElement("div"); label.className = "lane-label";
@@ -44,7 +77,8 @@ function lane(track, bins = false) {
   if (!bins) label.append(button("+", () => {
     const segment = {id:uid(), start:0, duration:4, source_start:0, speed:1, asset_id:null,
       text:"New scene", prompt:project.prompt, seed:0, backend:"title", volume:1,
-      fade_in:0, fade_out:0, duck:"none", role:track.kind === "audio" ? "music" : "source", keyframes:[]};
+      fade_in:0, fade_out:0, duck:"none", role:track.kind === "audio" ? "music" : "source",
+      keyframes:[], transform:{x:0,y:0,scale:1,rotation:0,opacity:1}, effects:[]};
     track.segments.push(segment); draw(); inspect(track, segment);
   }));
   const spans = document.createElement("div"); spans.className = "spans";
@@ -53,14 +87,47 @@ function lane(track, bins = false) {
     span.className = "span"; span.style.left = `${segment.start / extent() * 100}%`;
     span.style.width = `${segment.duration / extent() * 100}%`;
     span.title = `${segment.start}s – ${segment.start + segment.duration}s`;
+    bindSpanDrag(span, track, segment, spans, bins);
     spans.append(span);
   }
   row.append(label, spans); return row;
+}
+function activateTake(trackId, sourceSegmentId) {
+  for (const track of project.tracks) {
+    const generated = track.segments.some(segment =>
+      segment.generation?.source_segment_id === sourceSegmentId);
+    if (generated) track.enabled = track.id === trackId;
+  }
+  draw();
+}
+function drawTakes() {
+  const root = el("takes"); root.replaceChildren();
+  const storyboard = project.tracks.find(track => track.id === "storyboard") || project.tracks[0];
+  if (!storyboard) return;
+  for (const scene of storyboard.segments) {
+    const takes = project.tracks.filter(track => track.segments.some(segment =>
+      segment.generation?.source_segment_id === scene.id));
+    if (!takes.length) continue;
+    const group = document.createElement("div"); group.className = "take-group";
+    const title = document.createElement("strong"); title.textContent = scene.text || scene.id; group.append(title);
+    for (const track of takes) {
+      const segment = track.segments.find(item => item.generation?.source_segment_id === scene.id);
+      const label = `${segment?.backend || "take"} · seed ${segment?.seed ?? 0}`;
+      const choose = button(label, () => activateTake(track.id, scene.id));
+      if (track.enabled) choose.classList.add("active");
+      group.append(choose);
+    }
+    root.append(group);
+  }
 }
 function draw() {
   el("tracks").replaceChildren(...project.tracks.map(t => lane(t)));
   const storyboard = project.tracks.find(t => t.id === "storyboard") || project.tracks[0];
   el("storyboard").replaceChildren(...(storyboard ? [lane(storyboard, true)] : []));
+  drawTakes();
+  const playhead = el("playhead");
+  playhead.max = extent();
+  playhead.step = 1 / project.settings.fps;
   el("ruler").replaceChildren();
   for (let i = 0; i <= 4; i++) {
     const tick = document.createElement("span"); tick.textContent = `${(extent()*i/4).toFixed(1)}s`; el("ruler").append(tick);
@@ -224,6 +291,13 @@ el("regenerate").onclick = guard(async () => {
 });
 el("model-download").onclick = guard(() => job({action:"download", backend:el("backend").value}));
 el("backend").onchange = backendInfo;
+el("playhead").oninput = () => {
+  const time = Number(el("playhead").value);
+  if (Number.isFinite(time)) el("preview").currentTime = time;
+};
+el("preview").ontimeupdate = () => {
+  if (!el("playhead").matches(":active")) el("playhead").value = el("preview").currentTime || 0;
+};
 el("captions").oninput = () => { captionsDraft = el("captions").value; };
 for (const kind of ["video", "audio"]) {
   el(`add-${kind}`).onclick = guard(() => {
