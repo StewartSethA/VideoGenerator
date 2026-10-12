@@ -49,6 +49,17 @@ def parser() -> argparse.ArgumentParser:
     item = commands.add_parser("render", help="Export enabled tracks in a project")
     item.add_argument("project", type=Path)
     item.add_argument("--output", type=Path, default=Path("outputs/video.mp4"))
+    item = commands.add_parser("split", help="Split a timeline segment at an offset in seconds")
+    item.add_argument("project", type=Path)
+    item.add_argument("track")
+    item.add_argument("segment")
+    item.add_argument("offset", type=float)
+    item = commands.add_parser("crossfade", help="Overlap two segments with matched fades")
+    item.add_argument("project", type=Path)
+    item.add_argument("track")
+    item.add_argument("left")
+    item.add_argument("right")
+    item.add_argument("duration", type=float)
     item = commands.add_parser("regenerate", help="Add a disabled alternative track for a segment")
     item.add_argument("project", type=Path)
     item.add_argument("segment")
@@ -142,6 +153,15 @@ def main(argv: list[str] | None = None) -> int:
                 print(args.project)
         elif args.command == "render":
             print(render(load_project(args.project), args.output))
+        elif args.command in {"split", "crossfade"}:
+            from .operations import split_segment, crossfade
+            project = load_project(args.project)
+            if args.command == "split":
+                project = split_segment(project, args.track, args.segment, args.offset)
+            else:
+                project = crossfade(project, args.track, args.left, args.right, args.duration)
+            save_project(project, args.project)
+            print(args.project)
         elif args.command == "regenerate":
             project = add_generation(load_project(args.project), args.segment, args.backend,
                                      args.project.parent / "generated", args.seed, args.input_asset, args.enable)
