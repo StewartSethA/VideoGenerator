@@ -172,7 +172,7 @@ def generate_storyboard(project: dict, backend: str, directory: Path,
 
 
 def _check_modalities(backend, voice, music):
-    if backend != "title" and backends.get_backend(backend)["kind"] not in {"image", "video"}:
+    if backend not in {"title", "auto"} and backends.get_backend(backend)["kind"] not in {"image", "video"}:
         raise ValueError("Storyboard backend must generate image or video assets")
     if voice and backends.get_backend(voice).get("modality") != "voice":
         raise ValueError("Voice backend must generate speech")
@@ -194,7 +194,14 @@ def estimate_plan(project: dict, backend: str | None = None, voice: str | None =
         for original in track["segments"]:
             segment = copy.deepcopy(original)
             if backend and track is project["tracks"][0] and not segment.get("asset_id"):
-                segment["backend"] = backend
+                if backend == "auto":
+                    input_kinds = ["image"] if segment.get("keyframes") else []
+                    segment["backend"] = choose_backend(
+                        "video", input_kinds=input_kinds,
+                        keyframes=len(segment.get("keyframes") or []),
+                    )
+                else:
+                    segment["backend"] = backend
             selected = segment["backend"]
             if selected in GENERATION_SIZES:
                 segment["width"], segment["height"] = GENERATION_SIZES[selected]
