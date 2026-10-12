@@ -93,6 +93,13 @@ function inspect(track, segment) {
     input.id = `field-${name}`; input.value = segment[name] ?? (["speed", "volume"].includes(name) ? 1 : 0);
     label.append(input); el("fields").append(label);
   }
+  const transform = segment.transform || {x:0,y:0,scale:1,rotation:0,opacity:1};
+  for (const name of ["x","y","scale","rotation","opacity"]) {
+    const label = document.createElement("label"); label.textContent = `transform ${name}`;
+    const input = document.createElement("input"); input.type = "number"; input.step = "any";
+    input.id = `transform-${name}`; input.value = transform[name];
+    label.append(input); el("fields").append(label);
+  }
   for (const [name, values] of [["duck", ["none", "soft", "hard"]], ["role", ["source", "voice", "music"]]]) {
     const label = document.createElement("label"); label.textContent = name;
     const select = document.createElement("select"); select.id = `field-${name}`;
@@ -107,6 +114,7 @@ function inspect(track, segment) {
   el("segment-text").value = segment.text || "";
   el("segment-prompt").value = segment.prompt || "";
   el("keyframes").value = JSON.stringify(segment.keyframes || [], null, 2);
+  el("effects").value = JSON.stringify(segment.effects || [], null, 2);
 }
 function applySpan() {
   if (!selected) throw new Error("Select a span");
@@ -117,15 +125,29 @@ function applySpan() {
   for (const name of ["duck", "role"]) segment[name] = el(`field-${name}`).value;
   segment.asset_id = el("field-asset_id").value || null;
   segment.text = el("segment-text").value; segment.prompt = el("segment-prompt").value;
-  segment.keyframes = JSON.parse(el("keyframes").value); draw();
+  segment.keyframes = JSON.parse(el("keyframes").value);
+  segment.effects = JSON.parse(el("effects").value);
+  segment.transform = Object.fromEntries(
+    ["x","y","scale","rotation","opacity"].map(name => [name, Number(el(`transform-${name}`).value)])
+  );
+  draw();
 }
 async function save() {
   project.captions = JSON.parse(el("captions").value);
+  project.settings.audio = {
+    normalize: el("normalize-audio").checked,
+    target_lufs: Number(el("target-lufs").value),
+    true_peak: -1,
+    lra: 11
+  };
   await api("/api/project", {project}); captionsDraft = null; status("Saved");
 }
 async function refresh() {
-  state = await api("/api/state"); project = state.project; selected = null; captionsDraft = null; draw();
-  el("inspector").hidden = true;
+  state = await api("/api/state"); project = state.project; selected = null; captionsDraft = null;
+  const audio = project.settings.audio || {};
+  el("normalize-audio").checked = Boolean(audio.normalize);
+  el("target-lufs").value = audio.target_lufs ?? -14;
+  draw(); el("inspector").hidden = true;
 }
 async function job(payload) {
   setBusy(true);
@@ -153,6 +175,12 @@ el("create").onclick = guard(async () => {
   project = await api("/api/create", {prompt:el("prompt").value, script:el("script").value || null,
     duration:Number(el("duration").value), width:Number(el("width").value),
     height:Number(el("height").value), fps:Number(el("fps").value)});
+  project.settings.audio = {
+    normalize: el("normalize-audio").checked,
+    target_lufs: Number(el("target-lufs").value),
+    true_peak: -1, lra: 11
+  };
+  project = await api("/api/project", {project});
   selected = null; captionsDraft = null; el("inspector").hidden = true; draw(); status("Storyboard ready");
 });
 el("upload").onchange = guard(async () => {
