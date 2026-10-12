@@ -22,19 +22,19 @@ GENERATION_SIZES = {
 
 
 def ensure_model_dependencies() -> None:
-    ensure_model_dependencies()
-
-
-def ensure_models(backend: str) -> None:
-    spec = backends.get_backend(backend)
-    if not spec.get("model_id"):
-        return
     if all(importlib.util.find_spec(name) is not None for name in ("torch", "diffusers", "transformers")):
         return
     root = Path(__file__).resolve().parents[2]
     if not (root / "pyproject.toml").is_file():
         raise RuntimeError("Install optional models with: uv pip install 'videogenerator[models]'")
     subprocess.run(["uv", "sync", "--project", str(root), "--extra", "models"], check=True)
+
+
+def ensure_models(backend: str) -> None:
+    spec = backends.get_backend(backend)
+    if not spec.get("model_id"):
+        return
+    ensure_model_dependencies()
 
 
 def add_generation(project: dict, segment_id: str, backend: str, directory: Path,
