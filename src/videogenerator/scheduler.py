@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import subprocess
 
 
 @dataclass(frozen=True)
@@ -49,3 +52,43 @@ def schedule(jobs: list[Job], workers: list[Worker]) -> list[Assignment]:
         assignments.append(Assignment(job=job, worker=worker, slot=slot))
         load[worker.id] += 1
     return assignments
+
+
+@dataclass(frozen=True)
+class CommandJob:
+    id: str
+    argv: list[str]
+    cwd: str | None = None
+
+
+def execute_commands(assignments: list[Assignment], commands: dict[str, CommandJob],
+                     runner=subprocess.run) -> dict[str, object]:
+    """Run assigned subprocess jobs concurrently, isolating CUDA visibility per worker."""
+    if {assignment.job.id for assignment in assignments} != set(commands):
+        raise ValueError("Assignments and command jobs must have identical ids")
+
+    def run_one(assignment: Assignment):
+        command = commands[assignment.job.id]
+        env = os.environ.copy()
+        if assignment.worker.id.isdigit() and assignment.worker.vram_gb > 0:
+            env["CUDA_VISIBLE_DEVICES"] = assignment.worker.id
+        else:
+            env.pop("CUDA_VISIBLE_DEVICES", None)
+        result = runner(
+            command.argv, cwd=command.cwd, env=env,
+            text=True, capture_output=True, check=False,
+        )
+        if result.returncode:
+            raise RuntimeError(
+                f"Job {command.id!r} failed with exit {result.returncode}: "
+                f"{(result.stderr or result.stdout or '').strip()[-4000:]}"
+            )
+        return command.id, result
+
+    completed = {}
+    with ThreadPoolExecutor(max_workers=max(1, len({a.worker.id for a in assignments}))) as pool:
+        futures = [pool.submit(run_one, assignment) for assignment in assignments]
+        for future in as_completed(futures):
+            identifier, result = future.result()
+            completed[identifier] = result
+    return completed
