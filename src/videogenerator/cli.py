@@ -84,16 +84,20 @@ def parser() -> argparse.ArgumentParser:
     install = framework_commands.add_parser("install")
     install.add_argument("name")
     install.add_argument("--update", action="store_true")
+    install.add_argument("--dry-run", action="store_true")
     launch = framework_commands.add_parser("launch")
     launch.add_argument("name")
     launch.add_argument("--port", type=int)
     launch.add_argument("--no-install", action="store_true")
+    launch.add_argument("--dry-run", action="store_true")
     model = commands.add_parser("model", help="Cache an optional external model checkpoint")
     model_commands = model.add_subparsers(dest="model_command", required=True)
     model_install = model_commands.add_parser("install")
     model_install.add_argument("name")
     model_install.add_argument("--revision")
+    model_install.add_argument("--dry-run", action="store_true")
     commands.add_parser("hardware", help="Detect CPU/RAM/NVIDIA GPU hardware")
+    commands.add_parser("doctor", help="Check tools, hardware, backends and optional ecosystem status")
     item = commands.add_parser("estimate", help="Heuristic hardware-aware generation estimate")
     item.add_argument("project", type=Path)
     item.add_argument("--hardware", type=Path, help="JSON hardware profile for another machine")
@@ -177,7 +181,9 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "ecosystem-status":
                 print(json.dumps(ecosystem.status(), indent=2))
             elif args.command == "framework":
-                if args.framework_command == "install":
+                if args.dry_run:
+                    print(json.dumps(ecosystem.framework_plan(args.name, getattr(args, "port", None)), indent=2))
+                elif args.framework_command == "install":
                     print(ecosystem.install_framework(args.name, update=args.update))
                 else:
                     process = ecosystem.launch_framework(
@@ -185,9 +191,22 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     print(f"Started {args.name} as PID {process.pid}")
             elif args.model_command == "install":
-                print(ecosystem.install_model(args.name, revision=args.revision))
+                if args.dry_run:
+                    print(json.dumps(ecosystem.model_plan(args.name, args.revision), indent=2))
+                else:
+                    print(ecosystem.install_model(args.name, revision=args.revision))
         elif args.command == "hardware":
             print(json.dumps(backends.hardware(), indent=2))
+        elif args.command == "doctor":
+            from . import ecosystem
+            from .routing import capabilities
+            report = {
+                "tools": ecosystem.status()["tools"],
+                "hardware": backends.hardware(),
+                "builtin_backends": [row["id"] for row in capabilities() if row["source"] == "builtin"],
+                "ecosystem": ecosystem.status(),
+            }
+            print(json.dumps(report, indent=2))
         elif args.command == "estimate":
             info = json.loads(args.hardware.read_text()) if args.hardware else None
             print(json.dumps(estimate_plan(load_project(args.project), args.backend,
