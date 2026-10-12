@@ -54,6 +54,11 @@ def parser() -> argparse.ArgumentParser:
     item = commands.add_parser("setup", help="Check system tools and optionally install/cache models")
     item.add_argument("--models", nargs="*", default=[])
     commands.add_parser("backends", help="List built-in capabilities, licenses and model IDs")
+    item = commands.add_parser("routes", help="Show capability-ranked generation backends")
+    item.add_argument("--output", required=True, choices=["image","video","audio","music","voice","audiovisual"])
+    item.add_argument("--input", action="append", default=[], choices=["image","video","audio"])
+    item.add_argument("--keyframes", type=int, default=0)
+    item.add_argument("--include-unavailable", action="store_true")
     commands.add_parser("ecosystem", help="List optional external frameworks and modern model checkpoints")
     commands.add_parser("ecosystem-status", help="Show installed external frameworks and cached models")
     item = commands.add_parser("framework", help="Install, update or launch an external native framework")
@@ -136,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
             print("Ready")
         elif args.command == "backends":
             print(json.dumps(backends.catalog(), indent=2))
+        elif args.command == "routes":
+            from .routing import candidates
+            rows = candidates(args.output, input_kinds=args.input, keyframes=args.keyframes)
+            if not args.include_unavailable:
+                rows = [row for row in rows if row["executable"]]
+            print(json.dumps(rows, indent=2))
         elif args.command in {"ecosystem", "ecosystem-status", "framework", "model"}:
             from . import ecosystem
             if args.command == "ecosystem":
@@ -163,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "edit" and args.transcript:
                 transcript = json.loads(args.transcript.read_text(encoding="utf-8"))
             else:
-                ensure_models("sdxl")
+                from .workflow import ensure_model_dependencies
+                ensure_model_dependencies()
                 transcript = transcribe(args.source)
             if args.command == "transcribe":
                 args.output.parent.mkdir(parents=True, exist_ok=True)
