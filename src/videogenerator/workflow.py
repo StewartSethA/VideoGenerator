@@ -117,7 +117,6 @@ def add_generation(project: dict, segment_id: str, backend: str, directory: Path
         assets=asset_fingerprints(referenced),
     )
     cache_dir = directory / ".cache"
-    cache_dir.mkdir(exist_ok=True)
     cached = cache_dir / f"{cache_key}{output.suffix}"
     cache_hit = cached.is_file()
     try:
@@ -130,6 +129,7 @@ def add_generation(project: dict, segment_id: str, backend: str, directory: Path
                 input_path=Path(input_asset["path"]) if input_asset else None,
                 keyframes=effective_keyframes or None,
             )
+            cache_dir.mkdir(exist_ok=True)
             shutil.copy2(output, cached)
     except Exception:
         output.unlink(missing_ok=True)
