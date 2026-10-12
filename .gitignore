@@ -1,0 +1,11 @@
+.venv/
+.uv-bootstrap/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+projects/
+outputs/
+.env
+.cache/

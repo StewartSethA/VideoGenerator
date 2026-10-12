@@ -1,0 +1,8 @@
+.git
+.venv
+.uv-bootstrap
+__pycache__
+projects
+outputs
+.env
+.cache
