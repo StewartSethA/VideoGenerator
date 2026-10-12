@@ -8,7 +8,21 @@ from pathlib import Path
 from . import backends
 from .project import create_project, load_project, save_project
 from .render import render
-from .workflow import add_generation, ensure_models, estimate_plan, generate_storyboard
+from .workflow import (
+    add_generation, ensure_models, estimate_plan, generate_storyboard,
+    generate_storyboard_parallel,
+)
+
+
+def _keyframe(value: str) -> dict:
+    try:
+        frame_text, path = value.split("=", 1)
+        frame = int(frame_text)
+    except (ValueError, AttributeError) as exc:
+        raise argparse.ArgumentTypeError("keyframe must be FRAME=PATH") from exc
+    if frame < 0 or not path:
+        raise argparse.ArgumentTypeError("keyframe must use a nonnegative frame and nonempty path")
+    return {"frame": frame, "path": path}
 
 
 def parser() -> argparse.ArgumentParser:
@@ -29,6 +43,8 @@ def parser() -> argparse.ArgumentParser:
             item.add_argument("--voice", help="espeak or bark")
             item.add_argument("--music", help="musicgen")
             item.add_argument("--seed", type=int, default=0)
+            item.add_argument("--parallel", action="store_true",
+                              help="Generate independent visual scenes across detected GPUs")
             item.add_argument("--output", type=Path, default=Path("outputs/video.mp4"))
     item = commands.add_parser("render", help="Export enabled tracks in a project")
     item.add_argument("project", type=Path)
@@ -49,6 +65,8 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("--duration", type=float, default=4)
     item.add_argument("--width", type=int, default=512)
     item.add_argument("--height", type=int, default=512)
+    item.add_argument("--keyframe", action="append", type=_keyframe, default=[],
+                      help="Frame-conditioned image as FRAME=PATH; repeat when supported")
     item = commands.add_parser("download", help="Install model dependencies and cache requested weights")
     item.add_argument("backends", nargs="+")
     item = commands.add_parser("setup", help="Check system tools and optionally install/cache models")
@@ -108,8 +126,11 @@ def main(argv: list[str] | None = None) -> int:
                                      args.script.read_text(encoding="utf-8") if args.script else None,
                                      args.duration, args.width, args.height, args.fps)
             if args.command == "run":
-                project = generate_storyboard(project, args.backend, args.project.parent / "generated",
-                                              args.voice, args.music, args.seed)
+                generator = generate_storyboard_parallel if args.parallel else generate_storyboard
+                project = generator(
+                    project, args.backend, args.project.parent / "generated",
+                    args.voice, args.music, args.seed
+                )
             save_project(project, args.project)
             if args.command == "run":
                 print(render(project, args.output))
@@ -124,9 +145,11 @@ def main(argv: list[str] | None = None) -> int:
             print(project["tracks"][-1]["id"])
         elif args.command == "generate":
             ensure_models(args.backend)
-            print(backends.generate(args.backend, args.prompt, args.output, seed=args.seed,
-                                    duration=args.duration, width=args.width, height=args.height,
-                                    input_path=args.input))
+            print(backends.generate(
+                args.backend, args.prompt, args.output, seed=args.seed,
+                duration=args.duration, width=args.width, height=args.height,
+                input_path=args.input, keyframes=args.keyframe or None,
+            ))
         elif args.command in {"setup", "download"}:
             if args.command == "setup":
                 missing = [name for name in ("ffmpeg", "ffprobe") if not shutil.which(name)]
