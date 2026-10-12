@@ -18,6 +18,8 @@
         <label>Width <input id="width" type="number" value="1280"></label>
         <label>Height <input id="height" type="number" value="720"></label>
         <label>FPS <input id="fps" type="number" value="24"></label>
+        <label><input id="normalize-audio" type="checkbox"> Normalize audio</label>
+        <label>Target LUFS <input id="target-lufs" type="number" min="-70" max="-5" step="1" value="-14"></label>
         <label>Upload assets <input id="upload" type="file" multiple accept="image/png,image/jpeg,image/webp,video/*,audio/*"></label>
       </div>
       <button id="create">Build storyboard</button>
@@ -41,8 +43,11 @@
       <div id="fields" class="controls"></div>
       <label>Text / dialogue <textarea id="segment-text" rows="2"></textarea></label>
       <label>Generation prompt <textarea id="segment-prompt" rows="2"></textarea></label>
-      <label>Keyframes (backend-dependent JSON; unsupported requests fail explicitly)
-        <textarea id="keyframes" rows="2">[]</textarea>
+      <label>Keyframes (JSON: frame + visual asset_id; routed to supporting backends)
+        <textarea id="keyframes" rows="3">[]</textarea>
+      </label>
+      <label>Effects (JSON: grayscale, blur, sharpen, eq)
+        <textarea id="effects" rows="3">[]</textarea>
       </label>
       <button id="apply">Apply span edits</button>
       <button id="duplicate">Duplicate as alternative track</button>
