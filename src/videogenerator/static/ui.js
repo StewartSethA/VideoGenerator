@@ -1,5 +1,5 @@
 "use strict";
-let state, project, selected, polling = false;
+let state, project, selected, polling = false, captionsDraft = null;
 const el = id => document.getElementById(id);
 const status = text => { el("status").textContent = text; };
 const uid = () => crypto.randomUUID().replaceAll("-", "");
@@ -13,7 +13,14 @@ async function api(route, payload) {
   return result;
 }
 function guard(fn) {
-  return async () => { try { await fn(); } catch (error) { status(error.message); } };
+  return async () => {
+    if (polling) { status("Wait for the active operation before editing."); return; }
+    try { await fn(); } catch (error) { status(error.message); }
+  };
+}
+function setBusy(value) {
+  polling = value;
+  document.querySelectorAll("button,input,textarea,select").forEach(node => { node.disabled = value; });
 }
 function button(text, action) {
   const node = document.createElement("button");
@@ -58,7 +65,7 @@ function draw() {
   for (let i = 0; i <= 4; i++) {
     const tick = document.createElement("span"); tick.textContent = `${(extent()*i/4).toFixed(1)}s`; el("ruler").append(tick);
   }
-  el("captions").value = JSON.stringify(project.captions || [], null, 2);
+  el("captions").value = captionsDraft ?? JSON.stringify(project.captions || [], null, 2);
   el("project-json").value = JSON.stringify(project, null, 2);
   el("assets").replaceChildren();
   el("conditioning").replaceChildren(); option(el("conditioning"), "", "None");
@@ -114,16 +121,17 @@ function applySpan() {
 }
 async function save() {
   project.captions = JSON.parse(el("captions").value);
-  await api("/api/project", {project}); status("Saved");
+  await api("/api/project", {project}); captionsDraft = null; status("Saved");
 }
 async function refresh() {
-  state = await api("/api/state"); project = state.project; selected = null; draw();
+  state = await api("/api/state"); project = state.project; selected = null; captionsDraft = null; draw();
   el("inspector").hidden = true;
 }
 async function job(payload) {
-  await save(); const submitted = await api("/api/job", payload);
-  polling = true; status("Working… first model use installs dependencies and downloads weights.");
+  setBusy(true);
   try {
+    await save(); const submitted = await api("/api/job", payload);
+    status("Working… first model use installs dependencies and downloads weights.");
     while (true) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       state = await api("/api/state");
@@ -135,7 +143,7 @@ async function job(payload) {
       }
       await refresh(); status("Done"); break;
     }
-  } finally { polling = false; }
+  } finally { setBusy(false); }
 }
 function backendInfo() {
   const backend = state.backends.find(b => b.id === el("backend").value);
@@ -145,20 +153,28 @@ el("create").onclick = guard(async () => {
   project = await api("/api/create", {prompt:el("prompt").value, script:el("script").value || null,
     duration:Number(el("duration").value), width:Number(el("width").value),
     height:Number(el("height").value), fps:Number(el("fps").value)});
-  selected = null; el("inspector").hidden = true; draw(); status("Storyboard ready");
+  selected = null; captionsDraft = null; el("inspector").hidden = true; draw(); status("Storyboard ready");
 });
 el("upload").onchange = guard(async () => {
-  for (const file of el("upload").files) {
-    const response = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, {
-      method:"POST", headers:{"X-Editor-Token":state.token}, body:file});
-    const result = await response.json(); if (!response.ok) throw new Error(result.error);
-  }
-  await refresh(); status("Uploaded. Build a storyboard to match filenames, or assign assets to existing spans.");
+  const files = [...el("upload").files];
+  setBusy(true);
+  try {
+    await save();
+    for (const file of files) {
+      const response = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, {
+        method:"POST", headers:{"X-Editor-Token":state.token}, body:file});
+      const result = await response.json(); if (!response.ok) throw new Error(result.error);
+    }
+    await refresh(); status("Uploaded. Build a storyboard to match filenames, or assign assets to existing spans.");
+  } finally { setBusy(false); }
 });
 el("save").onclick = guard(save);
 el("export").onclick = guard(() => job({action:"render"}));
 el("estimate").onclick = guard(async () => {
-  await save(); el("details").textContent = JSON.stringify(await api("/api/estimate", {project}), null, 2);
+  await save();
+  const selectedBackend = state.backends.find(b => b.id === el("backend").value);
+  const backend = selectedBackend && ["image", "video"].includes(selectedBackend.kind) ? selectedBackend.id : null;
+  el("details").textContent = JSON.stringify(await api("/api/estimate", {project, backend}), null, 2);
   el("details").parentElement.open = true; status("Estimate is heuristic, not a benchmark.");
 });
 el("apply").onclick = guard(() => { applySpan(); status("Span updated; save to persist"); });
@@ -173,12 +189,14 @@ el("remove").onclick = guard(() => {
   selected = null; el("inspector").hidden = true; draw();
 });
 el("regenerate").onclick = guard(async () => {
+  const inputAssetId = el("conditioning").value || null;
   applySpan(); await job({action:"regenerate", segment:selected.segment.id,
     backend:el("backend").value, seed:Number(el("seed").value),
-    input_asset_id:el("conditioning").value || null});
+    input_asset_id:inputAssetId});
 });
 el("model-download").onclick = guard(() => job({action:"download", backend:el("backend").value}));
 el("backend").onchange = backendInfo;
+el("captions").oninput = () => { captionsDraft = el("captions").value; };
 for (const kind of ["video", "audio"]) {
   el(`add-${kind}`).onclick = guard(() => {
     project.tracks.push({id:uid(), name:`${kind} ${project.tracks.length + 1}`, kind, enabled:true, segments:[]}); draw();
@@ -187,6 +205,7 @@ for (const kind of ["video", "audio"]) {
 el("apply-json").onclick = guard(async () => {
   const candidate = JSON.parse(el("project-json").value);
   project = await api("/api/project", {project:candidate}); selected = null;
+  captionsDraft = null;
   el("inspector").hidden = true; draw(); status("Project JSON saved");
 });
 guard(async () => {

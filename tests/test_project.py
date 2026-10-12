@@ -21,9 +21,23 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([s["text"] for s in segments], ["First scene.", "Second scene!"])
         self.assertEqual([s["start"] for s in segments], [0, 6])
         self.assertEqual([s["duration"] for s in segments], [6, 6])
-        path = self.folder / "project.json"
+        path = self.folder / "nested" / "project.json"
         save_project(project, path)
         self.assertEqual(load_project(path), project)
+        save_project(project, path)
+        self.assertEqual(load_project(path), project)
+        self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_track_and_span_security_bounds(self):
+        project = create_project("Hello")
+        empty_track = {"name": "Track", "kind": "video", "enabled": True, "segments": []}
+        project["tracks"] = [
+            dict(empty_track, id=f"track-{index}") for index in range(1000)
+        ]
+        validate_project(project)
+        project["tracks"].append(dict(empty_track, id="overflow"))
+        with self.assertRaises(ValueError):
+            validate_project(project)
 
     def test_descriptive_assets_and_source_audio(self):
         for name in ("01_ocean.mp4", "02_forest.png", "music.wav", "ignore.txt"):

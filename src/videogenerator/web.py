@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import backends
 from .project import create_project, import_assets, load_project, save_project, validate_project
 from .render import render
-from .workflow import add_generation, ensure_models
+from .workflow import add_generation, ensure_models, estimate_plan
 
 
 class EditorServer(ThreadingHTTPServer):
@@ -253,7 +253,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                     result = self.server.project
                 elif parsed.path == "/api/estimate":
                     validate_project(payload.get("project", self.server.project), asset_root=self.server.workspace)
-                    result = backends.estimate(payload.get("project", self.server.project))
+                    result = estimate_plan(payload.get("project", self.server.project), payload.get("backend"))
                 elif parsed.path == "/api/job":
                     result = self.server.start_job(payload["action"], payload)
                 else:

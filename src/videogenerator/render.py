@@ -13,6 +13,14 @@ from pathlib import Path
 from .project import validate_project
 
 
+_INPUT_SAFETY = [
+    "-protocol_whitelist", "file,pipe",
+    "-format_whitelist",
+    "mov,matroska,webm,avi,image2,png_pipe,jpeg_pipe,webp_pipe,bmp_pipe,"
+    "ppm_pipe,gif,wav,mp3,flac,ogg,aac",
+]
+
+
 def _run(args):
     try:
         return subprocess.run(args, check=True, capture_output=True, text=True)
@@ -47,7 +55,9 @@ def render(project: dict, output: Path, asset_root: Path | None = None) -> Path:
     duration = math.ceil(duration * fps - 1e-9) / fps
     assets = {a["id"]: a for a in project["assets"]}
     # Keep scratch files on the same filesystem and remove them even on failure.
-    with tempfile.TemporaryDirectory(prefix=".videogenerator-", dir=".") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix=".videogenerator-", dir=output.parent.resolve(),
+    ) as directory:
         scratch = Path(directory)
         args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                 "-filter_complex_threads", "1", "-threads", "1"]
@@ -64,7 +74,8 @@ def render(project: dict, output: Path, asset_root: Path | None = None) -> Path:
             path = asset["path"]
             if path not in stream_cache:
                 data = json.loads(_run([
-                    "ffprobe", "-v", "error", "-show_entries", "stream=codec_type",
+                    "ffprobe", "-v", "error", *_INPUT_SAFETY,
+                    "-show_entries", "stream=codec_type",
                     "-of", "json", path,
                 ]).stdout)
                 stream_cache[path] = any(s["codec_type"] == "audio" for s in data["streams"])
@@ -99,6 +110,7 @@ def render(project: dict, output: Path, asset_root: Path | None = None) -> Path:
                 if asset:
                     index = input_index
                     input_index += 1
+                    args += _INPUT_SAFETY
                     if asset["kind"] == "image":
                         args += ["-loop", "1", "-framerate", str(fps)]
                     args += ["-threads", "1", "-i", asset["path"]]

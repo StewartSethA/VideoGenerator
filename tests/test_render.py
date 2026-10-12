@@ -2,8 +2,10 @@ import array
 import copy
 import json
 import math
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -168,6 +170,61 @@ class RenderTests(unittest.TestCase):
         output = render(project, self.folder / "fade.mp4")
         self.assertLess(self.pixel(output, 0.05)[0], self.pixel(output, 0.5)[0] * 0.5)
         self.assertLess(self.pixel(output, 0.9)[0], self.pixel(output, 0.5)[0] * 0.5)
+
+    def test_renamed_playlists_cannot_load_nested_media(self):
+        for name, content in (
+            ("network.mp4", "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n"
+             "http://127.0.0.1:9/media.ts\n#EXT-X-ENDLIST\n"),
+            ("local.mp4", "ffconcat version 1.0\nfile '/etc/passwd'\n"),
+        ):
+            with self.subTest(name=name):
+                asset = self.folder / name
+                asset.write_text(content, encoding="utf-8")
+                project = create_project("Playlist", duration=0.2, width=160, height=90, fps=20)
+                project["assets"] = [
+                    {"id": "playlist", "name": name, "path": str(asset), "kind": "video"},
+                ]
+                project["tracks"][0]["segments"][0]["asset_id"] = "playlist"
+                with self.assertRaisesRegex(RuntimeError, "whitelist|Invalid data"):
+                    render(project, self.folder / "rejected.mp4", self.folder)
+                self.assertFalse((self.folder / "rejected.mp4").exists())
+                audio_track = copy.deepcopy(project["tracks"][0])
+                audio_track.update(id="playlist-audio", kind="audio")
+                audio_track["segments"][0]["id"] = "playlist-audio-segment"
+                project["tracks"].append(audio_track)
+                with self.assertRaisesRegex(RuntimeError, "whitelist|Invalid data"):
+                    render(project, self.folder / "rejected.mp4", self.folder)
+
+    def test_export_uses_output_filesystem_from_unrelated_readonly_cwd(self):
+        cwd = self.folder / "readonly"
+        cwd.mkdir()
+        cwd.chmod(0o555)
+        self.addCleanup(cwd.chmod, 0o755)
+        destination = self.folder / "exports" / "output.mp4"
+        source = Path(__file__).resolve().parents[1] / "src"
+        script = """
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+from videogenerator.project import create_project
+from videogenerator.render import render
+import sys
+output = Path(sys.argv[1])
+original = tempfile.TemporaryDirectory
+def checked(*args, **kwargs):
+    assert Path(kwargs['dir']) == output.parent.resolve()
+    assert Path(kwargs['dir']) != Path.cwd()
+    return original(*args, **kwargs)
+with patch('videogenerator.render.tempfile.TemporaryDirectory', side_effect=checked):
+    render(create_project('Title', duration=0.2, width=160, height=90, fps=20), output)
+"""
+        subprocess.run(
+            [sys.executable, "-c", script, str(destination)], cwd=cwd,
+            env=dict(os.environ, PYTHONPATH=str(source)),
+            check=True, capture_output=True, text=True,
+        )
+        self.assertAlmostEqual(float(self.info(destination)["format"]["duration"]),
+                               0.2, delta=0.06)
 
 
 if __name__ == "__main__":

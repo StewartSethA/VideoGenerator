@@ -8,5 +8,6 @@ COPY src ./src
 RUN uv sync --locked --no-dev && useradd --create-home --uid 1000 editor \
     && mkdir /data && chown editor:editor /data
 USER editor
+WORKDIR /data
 ENV HF_HOME=/data/.cache/huggingface
 CMD ["/app/.venv/bin/videogenerator", "serve", "--workspace", "/data", "--no-browser"]

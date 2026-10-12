@@ -90,7 +90,9 @@ Unsupported conditioning types/keyframes fail explicitly, rather than pretending
 to guide a model. LTX supports a single initial image; arbitrary intermediate
 keyframe conditioning is not implemented. Dimensions/frame counts are validated
 per backend; some models have fixed frame presets. Assembly trims/pads generated
-media to the chosen span. Speech duration follows the text and can require a
+media to the chosen span. Storyboard regeneration uses model-specific generation
+sizes and scales them to the export canvas; standalone `generate` uses your
+explicit dimensions. Speech duration follows the text and can require a
 longer span or speed adjustment.
 
 Weights live in the normal Hugging Face cache (`HF_HOME` may relocate it).
@@ -107,7 +109,8 @@ once all required files/dependencies are available.
 - The timeline and storyboard bins share the same time scale. Click a span,
   choose an asset and edit start/duration/source offset, prompt, speed, gain,
   fades and ducking. Frame spans use `start = frame / fps`.
-- Add any number of audio/video tracks. Later enabled visual tracks overlay
+- Add audio/video tracks (up to 1,000 tracks/spans per project for resource safety).
+  Later enabled visual tracks overlay
   earlier tracks over their anchored spans. Duplicate or regenerate a segment
   as a **disabled alternative track**, then enable/disable to compare seeds or
   backends without destroying the original.
@@ -160,6 +163,7 @@ Manual captions/transcripts avoid any transcription model download.
 ```sh
 uv run videogenerator hardware
 uv run videogenerator estimate projects/local/project.json
+uv run videogenerator estimate projects/local/project.json --backend wan --voice espeak
 uv run videogenerator estimate projects/local/project.json --hardware ./target-hardware.json
 ```
 

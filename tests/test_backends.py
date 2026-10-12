@@ -56,8 +56,8 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(backends.get_backend("title")["kind"], "title")
         self.assertTrue(all(b["kind"] in {"title", "image", "video", "audio"}
                             for b in backends.catalog()))
-        self.assertIn("eSpeak: GPL-2.0-or-later", backends.get_backend("espeak")["license"])
-        self.assertIn("eSpeak NG: GPL-3.0-or-later", backends.get_backend("espeak")["license"])
+        self.assertEqual(backends.get_backend("espeak")["license"],
+                         "eSpeak GPL-2.0-or-later / eSpeak NG GPL-3.0-or-later")
         self.assertEqual(backends.get_backend("cogvideox")["license"], "Apache-2.0")
         with self.assertRaisesRegex(ValueError, "Unknown backend"):
             backends.get_backend("unknown")
@@ -132,6 +132,36 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(kwargs["num_inference_steps"], 30)
         modules["torch"].Generator.return_value.manual_seed.assert_called_with(42)
         pipeline.return_value.images[0].save.assert_called_with(self.directory / "two.png")
+
+    def test_model_switch_releases_old_cache_before_loading_replacement(self):
+        modules = self.mock_dependencies(cuda=True)
+        events = []
+        with patch.object(backends.gc, "collect", side_effect=lambda: events.append("gc")):
+            modules["torch"].cuda.empty_cache.side_effect = lambda: events.append("empty")
+            first = backends._load_model("sdxl", "cuda", False)
+            self.assertIs(backends._load_model(backend_id="sdxl", device="cuda", image_input=False), first)
+            self.assertEqual(events, [])
+            cls = modules["diffusers"].LTXPipeline
+            pipeline = MagicMock()
+            cls.from_pretrained.side_effect = lambda *args, **kwargs: events.append("load") or pipeline
+            second = backends._load_model("ltx", "cuda", False)
+            self.assertEqual(events, ["gc", "empty", "load"])
+            self.assertIs(second[0], pipeline)
+            self.assertIs(backends._load_model("ltx", "cuda", False), second)
+            self.assertEqual(events, ["gc", "empty", "load"])
+            backends._load_model("ltx", "cuda", True)
+            self.assertEqual(events[-2:], ["gc", "empty"])
+
+    def test_failed_replacement_does_not_retain_previous_pipeline(self):
+        modules = self.mock_dependencies()
+        backends._load_model("sdxl", "cpu", False)
+        cls = modules["diffusers"].LTXPipeline
+        cls.from_pretrained.side_effect = RuntimeError("load failed")
+        with self.assertRaisesRegex(RuntimeError, "load failed"):
+            backends._load_model("ltx", "cpu", False)
+        backends._load_model("sdxl", "cpu", False)
+        self.assertEqual(modules["diffusers"].StableDiffusionXLPipeline.from_pretrained.call_count, 2)
+        modules["torch"].cuda.empty_cache.assert_not_called()
 
     def test_video_pipeline_frames_dtypes_and_offload(self):
         modules = self.mock_dependencies(cuda=True)
@@ -224,6 +254,12 @@ class BackendTests(unittest.TestCase):
             backends.download("bark")
         modules["huggingface_hub"].snapshot_download.assert_not_called()
 
+    def test_cached_audio_weights_do_not_require_inventory_network_call(self):
+        modules = self.mock_dependencies()
+        modules["huggingface_hub"].try_to_load_from_cache.return_value = "cached/model.safetensors"
+        self.assertTrue(backends._audio_uses_safetensors(backends.get_backend("musicgen")))
+        modules["huggingface_hub"].list_repo_files.assert_not_called()
+
     @unittest.skipUnless(shutil.which("espeak") or shutil.which("espeak-ng"), "eSpeak not installed")
     def test_real_espeak_wav_generation(self):
         output = self.directory / "voice.wav"
@@ -284,7 +320,7 @@ class BackendTests(unittest.TestCase):
 
     def test_estimate_timeline_tracks_and_existing_assets(self):
         project = {
-            "settings": {"width": 1024, "height": 512},
+            "settings": {"width": 1024, "height": 512, "fps": 24},
             "tracks": [
                 {"enabled": True, "segments": [
                     {"id": "generated", "backend": "sdxl", "duration": 4},
@@ -302,6 +338,25 @@ class BackendTests(unittest.TestCase):
         project["tracks"][0]["segments"][0]["duration"] = 8
         longer = backends.estimate(project, dict(cpu_count=8, memory_gb=32, gpu_count=0))
         self.assertEqual(result["generation_seconds_range"], longer["generation_seconds_range"])
+        project["settings"]["fps"] = 48
+        faster_frames = backends.estimate(project, dict(cpu_count=8, memory_gb=32, gpu_count=0))
+        self.assertEqual(faster_frames["generation_seconds_range"], longer["generation_seconds_range"])
+        self.assertGreater(faster_frames["render_seconds_range"][1], longer["render_seconds_range"][1])
+        self.assertEqual(faster_frames["segments"][0]["render_fps"], 48)
+
+    def test_invalid_hardware_profiles_are_actionable(self):
+        for profile in ([], "cpu", {"cpu_count": "8"}, {"cpu_count": 0},
+                        {"cpu": float("inf")}, {"cpu_count": 10**1000}, {"gpu_count": -1},
+                        {"gpu_count": True}, {"memory_gb": float("nan")},
+                        {"ram_gb": "16"}, {"ram_gb": 10**1000}, {"vram_gb": -1},
+                        {"gpus": {}}, {"gpus": ["GPU"]},
+                        {"gpus": [{"memory_gb": float("inf")}]}):
+            with self.subTest(profile=profile), self.assertRaisesRegex(ValueError, "Hardware"):
+                backends.estimate({"segments": []}, profile)
+        result = backends.estimate({"segments": []},
+                                   {"cpu_count": 4, "memory_gb": None,
+                                    "gpus": [{"memory_gb": None}]})
+        self.assertTrue(result["feasible"])
 
 
 if __name__ == "__main__":

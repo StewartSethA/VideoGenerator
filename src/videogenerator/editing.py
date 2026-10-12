@@ -10,6 +10,7 @@ import wave
 from pathlib import Path
 
 from .project import _segment, create_project, validate_project
+from .render import _INPUT_SAFETY
 
 
 _VIDEO = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
@@ -105,7 +106,8 @@ def edit_media(source: Path, transcript: list[dict], *,
             or any(not isinstance(p, str) or not p.strip() or len(p) > 20000
                    or "\x00" in p or not _tokens(p) for p in drop_phrases)):
         raise ValueError("drop_phrases must contain nonempty exact phrases")
-    probe = _run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+    probe = _run(["ffprobe", "-v", "error", *_INPUT_SAFETY,
+                  "-show_entries", "format=duration",
                   "-of", "default=noprint_wrappers=1:nokey=1", str(source)])
     try:
         duration = _number(float(probe.stdout.strip()), "source duration", positive=True)
@@ -181,10 +183,10 @@ def transcribe(source: Path, model_id: str = _MODEL) -> list[dict]:
     except ImportError as exc:
         raise RuntimeError("Transcription needs optional models: run uv sync --extra models") from exc
 
-    with tempfile.TemporaryDirectory(prefix=".transcription-", dir=".") as directory:
+    with tempfile.TemporaryDirectory(prefix=".transcription-") as directory:
         audio_path = Path(directory) / "source.wav"
         _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-              "-i", str(source), "-vn", "-ac", "1", "-ar", "16000",
+              *_INPUT_SAFETY, "-i", str(source), "-vn", "-ac", "1", "-ar", "16000",
               "-c:a", "pcm_s16le", str(audio_path)])
         with wave.open(str(audio_path), "rb") as audio:
             if (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) != (1, 2, 16000):

@@ -1,4 +1,6 @@
 import copy
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,12 +10,27 @@ import wave
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from videogenerator.editing import _run as run_media
 from videogenerator.editing import edit_media, transcribe
 from videogenerator.project import validate_project
+from videogenerator.render import _INPUT_SAFETY
 
 
 def word(start, text, duration=0.2):
     return {"start": start, "duration": duration, "text": text}
+
+
+def disguised_manifests(source):
+    payload = source.with_name("payload.wav")
+    with wave.open(str(payload), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(b"\0\0" * 16000)
+    return [
+        f"ffconcat version 1.0\nfile '{payload}'\n",
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n{payload}\n#EXT-X-ENDLIST\n",
+    ]
 
 
 class EditingTests(unittest.TestCase):
@@ -84,6 +101,22 @@ class EditingTests(unittest.TestCase):
         self.assertEqual(project["settings"], {"width": 320, "height": 180, "fps": 30})
         self.assertEqual(project["global_asset_ids"], [])
 
+    def test_probe_uses_shared_input_safety(self):
+        edit_media(self.source, [word(0, "Hello")])
+        arguments = self.run.call_args.args[0]
+        start = arguments.index("-protocol_whitelist")
+        self.assertEqual(arguments[start:start + len(_INPUT_SAFETY)], _INPUT_SAFETY)
+        self.assertLess(start, arguments.index(str(self.source)))
+
+    @unittest.skipUnless(shutil.which("ffprobe"), "ffprobe is unavailable")
+    def test_probe_rejects_renamed_hls_and_concat(self):
+        with patch("videogenerator.editing._run", wraps=run_media):
+            for manifest in disguised_manifests(self.source):
+                self.source.write_text(manifest)
+                with self.subTest(manifest=manifest), self.assertRaisesRegex(
+                        RuntimeError, "not on whitelist|Invalid data"):
+                    edit_media(self.source, [word(0, "Hello")])
+
     def test_invalid_transcripts_and_bounds(self):
         invalid = [
             [], {}, [None], [word(-1, "bad")], [word(0, "bad", -1)],
@@ -127,6 +160,9 @@ class TranscriptionTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.source = Path(self.temp.name).resolve() / "recording.mp4"
         self.source.write_bytes(b"mock media")
+        self.scratch = self.source.parent / "os-temp"
+        self.scratch.mkdir()
+        self.enterContext(patch("tempfile.tempdir", str(self.scratch)))
         samples = Mock()
         samples.astype.return_value.__truediv__ = Mock(return_value="samples")
         self.numpy = types.ModuleType("numpy")
@@ -170,7 +206,41 @@ class TranscriptionTests(unittest.TestCase):
         self.assertEqual(arguments[0], "ffmpeg")
         self.assertIn("pcm_s16le", arguments)
         self.assertIn("16000", arguments)
+        start = arguments.index("-protocol_whitelist")
+        self.assertEqual(arguments[start:start + len(_INPUT_SAFETY)], _INPUT_SAFETY)
+        self.assertLess(start, arguments.index("-i"))
         self.assertFalse(self.converted.exists())
+
+    def test_transcription_from_read_only_working_directory_and_source(self):
+        readonly = self.source.parent / "readonly"
+        readonly.mkdir(mode=0o555)
+        self.source.parent.chmod(0o555)
+        factory = self.enterContext(patch(
+            "videogenerator.editing.tempfile.TemporaryDirectory",
+            wraps=tempfile.TemporaryDirectory,
+        ))
+        previous = Path.cwd()
+        try:
+            os.chdir(readonly)
+            transcript = transcribe(self.source)
+        finally:
+            os.chdir(previous)
+            self.source.parent.chmod(0o755)
+            readonly.chmod(0o755)
+        self.assertEqual(transcript[0]["text"], "Hello")
+        factory.assert_called_once_with(prefix=".transcription-")
+        self.assertEqual(self.converted.parent.parent, self.scratch)
+        self.assertFalse(self.converted.exists())
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg is unavailable")
+    def test_conversion_rejects_renamed_hls_and_concat(self):
+        with patch("videogenerator.editing._run", wraps=run_media):
+            for manifest in disguised_manifests(self.source):
+                self.source.write_text(manifest)
+                with self.subTest(manifest=manifest), self.assertRaisesRegex(
+                        RuntimeError, "not on whitelist|Invalid data"):
+                    transcribe(self.source)
+        self.transformers.pipeline.assert_not_called()
 
     def test_model_allowlist_before_loading(self):
         with self.assertRaisesRegex(ValueError, "allowlisted"):

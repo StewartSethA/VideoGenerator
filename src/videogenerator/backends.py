@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import copy
+import gc
 import importlib
 import math
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 import wave
-from functools import lru_cache
+from functools import wraps
 
 
 _CATALOG = [
@@ -18,7 +20,7 @@ _CATALOG = [
          license="System FFmpeg license", generative=False, inputs=[], device="cpu",
          vram_gb=0, ram_gb=1, seconds_per_second=0.2, steps=0),
     dict(id="espeak", name="eSpeak / eSpeak NG system voice", kind="audio", modality="voice", model_id=None,
-         license="eSpeak: GPL-2.0-or-later; eSpeak NG: GPL-3.0-or-later",
+         license="eSpeak GPL-2.0-or-later / eSpeak NG GPL-3.0-or-later",
          generative=False, inputs=[], device="cpu",
          vram_gb=0, ram_gb=0.1, seconds_per_second=0.05, steps=0),
     dict(id="sdxl", name="Stable Diffusion XL", kind="image",
@@ -94,7 +96,12 @@ def _system_program(backend_id: str) -> str:
 
 def _audio_uses_safetensors(backend: dict) -> bool:
     """Check upstream inventory rather than assume old audio checkpoints were converted."""
-    files = _dependency("huggingface_hub").list_repo_files(
+    hub = _dependency("huggingface_hub")
+    for filename, safe in (("model.safetensors", True), ("model.safetensors.index.json", True),
+                           ("pytorch_model.bin", False), ("pytorch_model.bin.index.json", False)):
+        if isinstance(hub.try_to_load_from_cache(backend["model_id"], filename), str):
+            return safe
+    files = hub.list_repo_files(
         repo_id=backend["model_id"], token=_token())
     if any("/" not in name and name.startswith("model") and name.endswith(".safetensors")
            for name in files):
@@ -124,7 +131,41 @@ def download(backend_id: str) -> str:
     ))
 
 
-@lru_cache(maxsize=1)
+def _single_model_cache(loader):
+    key, value = None, None
+    lock = threading.RLock()
+
+    def clear():
+        nonlocal key, value
+        with lock:
+            had_model = key is not None
+            key, value = None, None
+            if had_model:
+                gc.collect()
+
+    @wraps(loader)
+    def cached(backend_id, device, image_input):
+        nonlocal key, value
+        args = (backend_id, device, image_input)
+        with lock:
+            if key == args:
+                return value
+            had_model = key is not None
+            clear()
+            if had_model:
+                torch = _dependency("torch")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            # The previous pipeline is released before constructing its replacement.
+            value = loader(*args)
+            key = args
+            return value
+
+    cached.cache_clear = clear
+    return cached
+
+
+@_single_model_cache
 def _load_model(backend_id: str, device: str, image_input: bool):
     backend = get_backend(backend_id)
     torch = _dependency("torch")
@@ -293,12 +334,52 @@ def hardware() -> dict:
                 gpu_count=len(gpus), gpus=gpus)
 
 
+def _validate_hardware(hw: dict) -> None:
+    if not isinstance(hw, dict):
+        raise ValueError("Hardware profile must be an object")
+    gpus = hw.get("gpus", [])
+    if not isinstance(gpus, list) or any(not isinstance(gpu, dict) for gpu in gpus):
+        raise ValueError("Hardware gpus must be a list of objects")
+    for name in ("cpu_count", "cpu", "gpu_count"):
+        if name in hw:
+            value = hw[name]
+            minimum = 0 if name == "gpu_count" else 1
+            try:
+                valid = type(value) is int and math.isfinite(value) and value >= minimum
+            except OverflowError:
+                valid = False
+            if not valid:
+                raise ValueError(f"Hardware {name} must be a finite integer >= {minimum}")
+
+    def memory(value, name):
+        if value is None:
+            return
+        try:
+            valid = (not isinstance(value, bool) and isinstance(value, (int, float))
+                     and math.isfinite(value) and value >= 0)
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise ValueError(f"Hardware {name} must be a finite nonnegative number or null")
+
+    for name in ("memory_gb", "ram_gb", "vram_gb", "gpu_memory_gb"):
+        if name in hw:
+            memory(hw[name], name)
+    for gpu in gpus:
+        for name in ("memory_gb", "vram_gb"):
+            if name in gpu:
+                memory(gpu[name], f"GPU {name}")
+
+
 def estimate(project: dict, hardware_info: dict | None = None) -> dict:
     """Illustrative ranges, not measured benchmarks; generation and rendering differ."""
+    if not isinstance(project, dict):
+        raise ValueError("Project must be an object")
     hw = hardware() if hardware_info is None else hardware_info
+    _validate_hardware(hw)
     gpus = hw.get("gpus", [])
     gpu_count = hw.get("gpu_count", len(gpus))
-    gpu_memory = max((gpu.get("memory_gb", gpu.get("vram_gb", 0)) for gpu in gpus), default=0)
+    gpu_memory = max((gpu.get("memory_gb", gpu.get("vram_gb", 0)) or 0 for gpu in gpus), default=0)
     gpu_memory = max(gpu_memory, hw.get("vram_gb", hw.get("gpu_memory_gb", 0)) or 0)
     cpu_count = max(1, hw.get("cpu_count", hw.get("cpu", 1)) or 1)
     memory = hw.get("memory_gb", hw.get("ram_gb"))
@@ -308,6 +389,9 @@ def estimate(project: dict, hardware_info: dict | None = None) -> dict:
     generation_total = 0.0
     render_total = 0.0
     settings = project.get("settings", {})
+    render_fps = settings.get("fps", 24)
+    if not isinstance(render_fps, (int, float)) or not math.isfinite(render_fps) or render_fps <= 0:
+        raise ValueError("Project frame rate must be finite and positive")
     source_segments = project.get("segments")
     if source_segments is None:
         source_segments = [segment for track in project.get("tracks", [])
@@ -349,10 +433,13 @@ def estimate(project: dict, hardware_info: dict | None = None) -> dict:
         if not needs_generation:
             feasible, notes = True, []
         render = duration * 0.2 * pixels / min(cpu_count / 2, 4)
+        if backend["kind"] != "audio":
+            render *= render_fps / 24
         generation_total += generation
         render_total += render
         segments.append(dict(index=index, id=segment.get("id"), backend=backend["id"], feasible=feasible,
                              generation_frames=frames if needs_generation else None,
+                             render_fps=render_fps,
                              generation_seconds_range=[round(generation * .5, 2), round(generation * 3, 2)],
                              render_seconds_range=[round(render * .5, 2), round(render * 3, 2)],
                              suggested_vram_gb=backend["vram_gb"], suggested_ram_gb=backend["ram_gb"],

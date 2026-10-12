@@ -8,7 +8,7 @@ from pathlib import Path
 from . import backends
 from .project import create_project, load_project, save_project
 from .render import render
-from .workflow import add_generation, ensure_models, generate_storyboard
+from .workflow import add_generation, ensure_models, estimate_plan, generate_storyboard
 
 
 def parser() -> argparse.ArgumentParser:
@@ -58,6 +58,9 @@ def parser() -> argparse.ArgumentParser:
     item = commands.add_parser("estimate", help="Heuristic hardware-aware generation estimate")
     item.add_argument("project", type=Path)
     item.add_argument("--hardware", type=Path, help="JSON hardware profile for another machine")
+    item.add_argument("--backend", help="Plan generation for storyboard spans without assets")
+    item.add_argument("--voice", help="Plan narration for every storyboard span")
+    item.add_argument("--music", help="Plan a whole-sequence score")
     item = commands.add_parser("edit", help="Trim a source by human/local Whisper transcript and add captions")
     item.add_argument("source", type=Path)
     item.add_argument("--transcript", type=Path, help="JSON list of {start, duration, text}; word timestamps preferred")
@@ -121,7 +124,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(backends.hardware(), indent=2))
         elif args.command == "estimate":
             info = json.loads(args.hardware.read_text()) if args.hardware else None
-            print(json.dumps(backends.estimate(load_project(args.project), info), indent=2))
+            print(json.dumps(estimate_plan(load_project(args.project), args.backend,
+                                           args.voice, args.music, info), indent=2))
         elif args.command in {"edit", "transcribe"}:
             from .editing import edit_media, transcribe
             if args.command == "edit" and args.transcript:

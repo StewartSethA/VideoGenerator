@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import tempfile
 from pathlib import Path
 
 
@@ -131,7 +132,7 @@ def _list(value, name, limit=1000):
 
 
 def validate_project(project: dict, asset_root: Path | None = None) -> None:
-    """Validate before accepting documents or constructing any FFmpeg arguments."""
+    """Validate documents, limiting each to 1,000 tracks and 1,000 total segments."""
     if not isinstance(project, dict):
         raise ValueError("Project must be an object")
     if type(project.get("version")) is not int or project["version"] != 1:
@@ -188,7 +189,7 @@ def validate_project(project: dict, asset_root: Path | None = None) -> None:
     if len(set(global_ids)) != len(global_ids):
         raise ValueError("Duplicate global asset")
     count = 0
-    for track in _list(project.get("tracks"), "tracks", 100):
+    for track in _list(project.get("tracks"), "tracks", 1000):
         identifier(track)
         _text(track.get("name"), "track name", 1000)
         if track.get("kind") not in ("video", "audio") or type(track.get("enabled")) is not bool:
@@ -243,7 +244,22 @@ def validate_project(project: dict, asset_root: Path | None = None) -> None:
 
 def save_project(project: dict, path: Path) -> None:
     validate_project(project)
-    Path(path).write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix=".project-", suffix=".json",
+            dir=path.parent, delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(project, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def load_project(path: Path) -> dict:
