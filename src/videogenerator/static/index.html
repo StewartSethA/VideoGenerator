@@ -33,9 +33,12 @@
       <h2>Timeline</h2>
       <p>Click a span to edit. Later enabled video tracks overlay earlier tracks. Disable alternatives to compare.</p>
       <div id="ruler"></div>
+      <label>Playhead <input id="playhead" type="range" min="0" max="1" step="0.0416667" value="0"></label>
       <div id="tracks"></div>
       <h3>Storyboard content bins</h3>
       <div id="storyboard"></div>
+      <h3>Generated takes</h3>
+      <div id="takes"></div>
       <button id="add-video">Add video track</button><button id="add-audio">Add audio track</button>
     </section>
     <section class="panel" id="inspector" hidden>
