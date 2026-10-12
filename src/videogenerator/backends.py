@@ -80,7 +80,7 @@ _CATALOG = [
          seconds_per_second=20, steps=30, size_multiple=32,
          frame_multiple=8, fps=24, prefer_bf16=True),
     dict(id="qwen_image", name="Qwen-Image", kind="image",
-         model_id="Qwen/Qwen-Image", pipeline="QwenImagePipeline",
+         model_id="Qwen/Qwen-Image", pipeline="DiffusionPipeline",
          image_pipeline="QwenImageImg2ImgPipeline", license="Apache-2.0",
          generative=True, inputs=["image"], device="cuda", vram_gb=16, ram_gb=32,
          seconds_per_second=8, steps=50, size_multiple=8, prefer_bf16=True),
