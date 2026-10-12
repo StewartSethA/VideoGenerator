@@ -121,6 +121,10 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("--keep-fillers", action="store_true")
     item.add_argument("--max-pause", type=float, default=0.35)
     item.add_argument("--drop-phrase", action="append", default=[])
+    item.add_argument("--auto", action="store_true",
+                      help="Automatically select informative transcript ranges")
+    item.add_argument("--target-duration", type=float,
+                      help="Target seconds for --auto shortening")
     item.add_argument("--project", type=Path, default=Path("projects/edited/project.json"))
     item.add_argument("--output", type=Path, help="Also export the edited project")
     item = commands.add_parser("transcribe", help="Download/use local Whisper-small for word timestamps")
@@ -232,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(estimate_plan(load_project(args.project), args.backend,
                                            args.voice, args.music, info), indent=2))
         elif args.command in {"edit", "transcribe"}:
-            from .editing import edit_media, transcribe
+            from .editing import edit_media, auto_edit_media, transcribe
             if args.command == "edit" and args.transcript:
                 transcript = json.loads(args.transcript.read_text(encoding="utf-8"))
             else:
@@ -244,8 +248,20 @@ def main(argv: list[str] | None = None) -> int:
                 args.output.write_text(json.dumps(transcript, indent=2), encoding="utf-8")
                 print(args.output)
             else:
-                project = edit_media(args.source, transcript, remove_fillers=not args.keep_fillers,
-                                     max_pause=args.max_pause, drop_phrases=args.drop_phrase)
+                if args.auto:
+                    if args.target_duration is None:
+                        raise ValueError("--auto requires --target-duration")
+                    if args.drop_phrase:
+                        raise ValueError("--drop-phrase cannot be combined with --auto")
+                    project = auto_edit_media(
+                        args.source, transcript, args.target_duration,
+                        remove_fillers=not args.keep_fillers, max_pause=args.max_pause,
+                    )
+                else:
+                    project = edit_media(
+                        args.source, transcript, remove_fillers=not args.keep_fillers,
+                        max_pause=args.max_pause, drop_phrases=args.drop_phrase,
+                    )
                 save_project(project, args.project)
                 print(render(project, args.output) if args.output else args.project)
         elif args.command == "serve":
