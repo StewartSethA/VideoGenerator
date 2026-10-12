@@ -42,7 +42,8 @@ class EditorServer(ThreadingHTTPServer):
             raise ValueError("A job is already running; wait before editing or starting another")
         project = copy.deepcopy(self.project)
         if action == "regenerate":
-            backends.get_backend(payload["backend"])
+            if payload["backend"] != "auto":
+                backends.get_backend(payload["backend"])
         elif action == "download":
             backends.get_backend(payload["backend"])
         elif action != "render":
@@ -175,6 +176,11 @@ class EditorHandler(BaseHTTPRequestHandler):
                              "token": self.server.token, "jobs": copy.deepcopy(self.server.jobs),
                              "busy": self.server.active}
                 state["backends"] = backends.catalog()
+                state["backends"].insert(0, {
+                    "id": "auto", "name": "Automatic routing", "kind": "video",
+                    "inputs": ["image"], "generative": True,
+                    "license": "Depends on selected backend",
+                })
                 state["hardware"] = backends.hardware()
                 self.json_response(state)
             elif route.startswith("/media/"):
