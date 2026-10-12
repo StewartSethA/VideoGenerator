@@ -7,6 +7,7 @@ import re
 import subprocess
 import tempfile
 import wave
+from collections import Counter
 from pathlib import Path
 
 from .project import _segment, create_project, validate_project
@@ -87,9 +88,92 @@ def _removed(words: list[dict], phrases: list[str]) -> set[int]:
     return removed
 
 
+def select_highlights(words: list[dict], target_duration: float) -> list[int]:
+    """Select informative transcript entries under a duration budget.
+
+    The default scorer is deterministic and local. It removes common filler phrases,
+    groups speech into utterances, rewards lexical information, penalizes repetition,
+    and returns retained entry indices in original order.
+    """
+    if (isinstance(target_duration, bool) or not isinstance(target_duration, (int, float))
+            or not math.isfinite(target_duration) or target_duration <= 0):
+        raise ValueError("target_duration must be finite and positive")
+    if not isinstance(words, list) or not words:
+        raise ValueError("words must be a nonempty transcript list")
+    filler = _removed(words, ["um", "uh", "erm", "hmm", "you know"])
+    available = [i for i in range(len(words)) if i not in filler]
+    if not available:
+        return []
+
+    tokens_by_index = [_tokens(entry.get("text", "")) for entry in words]
+    frequencies = Counter(
+        token for i in available for token in tokens_by_index[i]
+        if len(token) > 1
+    )
+
+    blocks = []
+    current = []
+    previous_end = None
+    for index in available:
+        entry = words[index]
+        start = float(entry["start"])
+        end = start + float(entry["duration"])
+        boundary = (
+            current and previous_end is not None and start - previous_end > 0.75
+        )
+        if boundary:
+            blocks.append(current)
+            current = []
+        current.append(index)
+        previous_end = end
+        if re.search(r"[.!?][\"')\]]*$", entry.get("text", "").strip()):
+            blocks.append(current)
+            current = []
+            previous_end = None
+    if current:
+        blocks.append(current)
+
+    def block_score(indices):
+        duration = sum(float(words[i]["duration"]) for i in indices)
+        tokens = [token for i in indices for token in tokens_by_index[i] if len(token) > 1]
+        if not tokens or duration <= 0:
+            return -1e9
+        rarity = sum(1 / math.sqrt(max(1, frequencies[token])) for token in tokens)
+        diversity = len(set(tokens)) / len(tokens)
+        repetition = 1 - diversity
+        density = len(tokens) / duration
+        return (rarity + diversity * 2 + min(density, 4) * 0.3 - repetition * 2) / duration
+
+    ranked = sorted(blocks, key=lambda block: (-block_score(block), block[0]))
+    selected = []
+    used = 0.0
+    for block in ranked:
+        duration = sum(float(words[i]["duration"]) for i in block)
+        if used + duration <= target_duration + 1e-9:
+            selected.extend(block)
+            used += duration
+
+    if not selected:
+        entries = sorted(
+            available,
+            key=lambda i: (
+                -(sum(1 / math.sqrt(max(1, frequencies[t])) for t in tokens_by_index[i])
+                  / max(float(words[i]["duration"]), 1e-6)),
+                i,
+            ),
+        )
+        for index in entries:
+            duration = float(words[index]["duration"])
+            if used + duration <= target_duration + 1e-9:
+                selected.append(index)
+                used += duration
+    return sorted(selected)
+
+
 def edit_media(source: Path, transcript: list[dict], *,
                remove_fillers: bool = True, max_pause: float = 0.35,
                drop_phrases: list[str] | None = None,
+               keep_indices: list[int] | set[int] | None = None,
                width: int = 1280, height: int = 720, fps: int = 24) -> dict:
     """Cut exact transcript phrases and long pauses, not semantic summarization.
 
@@ -118,6 +202,12 @@ def edit_media(source: Path, transcript: list[dict], *,
     if remove_fillers:
         phrases += ["um", "uh", "erm", "hmm", "you know"]
     removed = _removed(words, phrases)
+    if keep_indices is not None:
+        if (not isinstance(keep_indices, (list, set, tuple))
+                or any(type(i) is not int or not 0 <= i < len(words) for i in keep_indices)):
+            raise ValueError("keep_indices must contain valid transcript indices")
+        keep = set(keep_indices)
+        removed.update(i for i in range(len(words)) if i not in keep)
     retained = [i for i in range(len(words)) if i not in removed]
     if not retained:
         raise ValueError("No speech remains after transcript editing")
@@ -170,6 +260,19 @@ def edit_media(source: Path, transcript: list[dict], *,
     project["captions"] = captions
     validate_project(project)
     return project
+
+
+def auto_edit_media(source: Path, transcript: list[dict], target_duration: float, *,
+                    remove_fillers: bool = True, max_pause: float = 0.35,
+                    width: int = 1280, height: int = 720, fps: int = 24) -> dict:
+    """Create a concise chronological edit from transcript information density."""
+    keep = select_highlights(transcript, target_duration)
+    if not keep:
+        raise ValueError("Automatic edit found no speech to retain")
+    return edit_media(
+        source, transcript, remove_fillers=remove_fillers, max_pause=max_pause,
+        keep_indices=keep, width=width, height=height, fps=fps,
+    )
 
 
 def transcribe(source: Path, model_id: str = _MODEL) -> list[dict]:
