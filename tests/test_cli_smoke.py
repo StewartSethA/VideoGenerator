@@ -12,6 +12,8 @@ class CliSmokeTests(unittest.TestCase):
             "new": ["new","hello"],
             "run": ["run","hello"],
             "render": ["render","project.json"],
+            "split": ["split","project.json","storyboard","scene-1","1.0"],
+            "crossfade": ["crossfade","project.json","storyboard","scene-1","scene-2","0.5"],
             "regenerate": ["regenerate","project.json","scene-1","--backend","sdxl"],
             "generate": ["generate","sdxl","hello","--output","x.png"],
             "download": ["download","sdxl"],
