@@ -143,6 +143,7 @@ def add_generation(project: dict, segment_id: str, backend: str, directory: Path
                        seed=seed, source_start=0, speed=1)
     alternative["generation"] = {
         "backend": backend,
+        "source_segment_id": segment_id,
         "model_id": spec.get("model_id"),
         "cache_key": cache_key,
         "cache_hit": cache_hit,
@@ -309,7 +310,8 @@ def generate_storyboard_parallel(project: dict, backend: str, directory: Path,
             backend=plan["backend"], seed=plan["seed"], source_start=0, speed=1,
         )
         alternative["generation"] = {
-            "backend": plan["backend"], "model_id": spec.get("model_id"),
+            "backend": plan["backend"], "source_segment_id": plan["segment"]["id"],
+            "model_id": spec.get("model_id"),
             "cache_key": plan["cache_key"], "cache_hit": plan["cache_hit"],
             "seed": plan["seed"], "prompt": plan["prompt"],
             "width": plan["width"], "height": plan["height"],
