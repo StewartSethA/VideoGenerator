@@ -175,18 +175,46 @@ assembly, not generation. GPU count is detected but does not imply speedup:
 inference is sequential on one device. Use `hardware` output as the template
 for a target hardware profile.
 
-## Existing ecosystems and deployment
+## Optional model/framework ecosystem
 
-There is no verified universal repository bundling *all* local generators,
-professional editing, arbitrary-keyframe regeneration and unrestricted weights.
-For broader model coverage, [ComfyUI](https://github.com/Comfy-Org/ComfyUI) is a
-strong node/workflow ecosystem with desktop installs and native local UI.
-It still requires appropriate workflows, dependencies and weights; it is not
-automatically a timeline NLE. The [Wan examples](https://github.com/Comfy-Org/ComfyUI_examples/tree/master/wan)
-and [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo) are starting
-points. [AudioCraft](https://github.com/facebookresearch/audiocraft) provides
-MusicGen's native Gradio demos. These native applications are alternatives,
-**not installed, launched or integrated by this repository**.
+VideoGenerator keeps its tested built-in adapters small, but can also install,
+cache and launch larger external ecosystems without pretending they all expose
+the same API. The registry currently includes ComfyUI, WanGP, Wan 2.2,
+HunyuanVideo 1.5, LTX, MMAudio, ACE-Step 1.5 and MoneyPrinterTurbo, plus current
+optional checkpoints for Wan 2.2, HunyuanVideo 1.5, LTX-2, Qwen-Image,
+FLUX.2 Klein and ACE-Step.
+
+```sh
+uv run videogenerator ecosystem
+uv run videogenerator ecosystem-status
+
+# Clone/install an external framework into ~/.cache/videogenerator
+uv run videogenerator framework install comfyui
+uv run videogenerator framework launch comfyui --port 8188
+
+uv run videogenerator framework install acestep
+uv run videogenerator framework launch acestep
+
+# Cache a requested checkpoint on demand. This uses the optional model extra.
+uv sync --extra models
+uv run videogenerator model install qwen_image
+uv run videogenerator model install wan22_ti2v_5b
+```
+
+Frameworks keep their native UI and can still be run directly from their cached
+checkout. VideoGenerator stores them under `VIDEOGENERATOR_HOME` (default:
+`~/.cache/videogenerator`) in separate environments, so they do not have to
+share the application's Python environment. External projects and checkpoints
+retain their upstream licenses and installation requirements. Launch commands
+are intentionally declarative in `model_registry.toml`; if an upstream CLI
+changes, update the registry rather than baking project-specific assumptions
+into the editor.
+
+ComfyUI is especially useful as the broad model/workflow engine behind
+VideoGenerator, while VideoGenerator remains responsible for project structure,
+storyboard/timeline editing, alternate takes, asset anchoring and final assembly.
+There is still no claim that one external framework provides every NLE feature
+or that all registered models have been inference-tested on every GPU.
 
 For this application, `./start.sh` is the native one-liner. A CPU Linux container:
 
@@ -223,7 +251,7 @@ fake output.
 This is a V1/V1.5 foundation, not fulfillment of every aspirational feature:
 advanced crossfades/effects, interactive drag editing, automatic semantic
 summarization, arbitrary intermediate keyframes, relighting/background swaps,
-external framework/native-UI orchestration, configurable hosted paid providers,
+deep API-level orchestration of every external framework, configurable hosted paid providers,
 multi-GPU scheduling and calibrated time/cost benchmarks remain future work.
 Useful production additions include undo/version history, autosave recovery,
 proxy media, color management, loudness normalization, subtitle export,

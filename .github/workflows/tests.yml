@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+    branches: [main, merge-local-ecosystem]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.0"
+          enable-cache: true
+      - name: Install system media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
+      - name: Sync
+        run: uv sync --locked
+      - name: Unit and integration tests
+        run: uv run python -m unittest discover -s tests -v
