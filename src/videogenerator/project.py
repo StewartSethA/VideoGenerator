@@ -220,8 +220,31 @@ def validate_project(project: dict, asset_root: Path | None = None) -> None:
                 raise ValueError("Invalid duck")
             if segment.get("role") not in ("voice", "music", "source"):
                 raise ValueError("Invalid role")
-            if _list(segment.get("keyframes"), "keyframes"):
-                raise ValueError("Keyframes are not supported")
+            keyframes = _list(segment.get("keyframes"), "keyframes", 64)
+            seen_frames = set()
+            for keyframe in keyframes:
+                if not isinstance(keyframe, dict):
+                    raise ValueError("Invalid keyframe")
+                frame = keyframe.get("frame")
+                if type(frame) is not int or frame < 0 or frame > int(segment["duration"] * settings["fps"]):
+                    raise ValueError("Invalid keyframe frame")
+                if frame in seen_frames:
+                    raise ValueError("Duplicate keyframe frame")
+                seen_frames.add(frame)
+                key_asset = keyframe.get("asset_id")
+                if not isinstance(key_asset, str) or key_asset not in assets:
+                    raise ValueError("Unknown keyframe asset")
+                if assets[key_asset]["kind"] not in ("image", "video"):
+                    raise ValueError("Keyframe asset must be visual")
+                if "prompt" in keyframe:
+                    _text(keyframe.get("prompt"), "keyframe prompt")
+            generation = segment.get("generation")
+            if generation is not None:
+                if not isinstance(generation, dict):
+                    raise ValueError("Invalid generation provenance")
+                for key in ("backend", "cache_key"):
+                    if key in generation:
+                        _text(generation[key], f"generation {key}", 1000)
             aid = segment.get("asset_id")
             if aid is not None:
                 if not isinstance(aid, str) or aid not in assets:
