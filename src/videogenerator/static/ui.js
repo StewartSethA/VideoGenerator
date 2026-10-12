@@ -273,6 +273,38 @@ el("estimate").onclick = guard(async () => {
   el("details").parentElement.open = true; status("Estimate is heuristic, not a benchmark.");
 });
 el("apply").onclick = guard(() => { applySpan(); status("Span updated; save to persist"); });
+el("split-playhead").onclick = guard(() => {
+  if (!selected) throw new Error("Select a span");
+  applySpan();
+  const segment = selected.segment;
+  const offset = Number(el("playhead").value) - segment.start;
+  if (!(offset > 0 && offset < segment.duration)) throw new Error("Place the playhead inside the selected span");
+  const right = structuredClone(segment);
+  right.id = uid();
+  right.start = segment.start + offset;
+  right.duration = segment.duration - offset;
+  right.source_start = segment.source_start + offset * segment.speed;
+  segment.duration = offset;
+  const index = selected.track.segments.indexOf(segment);
+  selected.track.segments.splice(index + 1, 0, right);
+  draw(); inspect(selected.track, right); status("Split ready to save");
+});
+el("crossfade-next").onclick = guard(() => {
+  if (!selected) throw new Error("Select a span");
+  applySpan();
+  const ordered = [...selected.track.segments].sort((a,b) => a.start - b.start);
+  const index = ordered.indexOf(selected.segment);
+  const next = ordered[index + 1];
+  if (!next) throw new Error("No following span on this track");
+  const duration = Number(el("crossfade-duration").value);
+  if (!(duration > 0 && duration <= Math.min(selected.segment.duration, next.duration))) {
+    throw new Error("Crossfade duration must fit both spans");
+  }
+  selected.segment.fade_out = duration;
+  next.fade_in = duration;
+  next.start = selected.segment.start + selected.segment.duration - duration;
+  draw(); status("Crossfade ready to save");
+});
 el("duplicate").onclick = guard(() => {
   applySpan(); const segment = structuredClone(selected.segment); segment.id = uid();
   project.tracks.push({id:uid(), name:"Alternative", kind:selected.track.kind, enabled:false, segments:[segment]});
