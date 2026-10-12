@@ -1,4 +1,9 @@
 [models.wan22_t2v_a14b]
+output = "video"
+inputs = []
+keyframes = false
+executable = false
+vram_gb = 24
 kind = "video"
 provider = "huggingface"
 repo_id = "Wan-AI/Wan2.2-T2V-A14B"
@@ -7,6 +12,11 @@ license = "Apache-2.0"
 notes = "High-quality text-to-video checkpoint; very large download."
 
 [models.wan22_i2v_a14b]
+output = "video"
+inputs = ["image"]
+keyframes = false
+executable = false
+vram_gb = 24
 kind = "video"
 provider = "huggingface"
 repo_id = "Wan-AI/Wan2.2-I2V-A14B"
@@ -15,6 +25,11 @@ license = "Apache-2.0"
 notes = "Image-to-video checkpoint for reference-driven shots."
 
 [models.wan22_ti2v_5b]
+output = "video"
+inputs = ["image"]
+keyframes = false
+executable = false
+vram_gb = 12
 kind = "video"
 provider = "huggingface"
 repo_id = "Wan-AI/Wan2.2-TI2V-5B"
@@ -23,6 +38,11 @@ license = "Apache-2.0"
 notes = "Smaller unified text/image-to-video checkpoint."
 
 [models.hunyuanvideo15]
+output = "video"
+inputs = ["image"]
+keyframes = false
+executable = false
+vram_gb = 16
 kind = "video"
 provider = "huggingface"
 repo_id = "tencent/HunyuanVideo-1.5"
@@ -31,6 +51,11 @@ license = "Tencent Hunyuan Community License"
 notes = "Text/image-to-video family; check current upstream terms before use."
 
 [models.ltx2]
+output = "video"
+inputs = ["image"]
+keyframes = true
+executable = false
+vram_gb = 24
 kind = "audiovisual"
 provider = "huggingface"
 repo_id = "Lightricks/LTX-2"
@@ -39,6 +64,11 @@ license = "Checkpoint-specific"
 notes = "Audio/video generation and reference-conditioned workflows."
 
 [models.qwen_image]
+output = "image"
+inputs = ["image"]
+keyframes = false
+executable = false
+vram_gb = 12
 kind = "image"
 provider = "huggingface"
 repo_id = "Qwen/Qwen-Image"
@@ -47,6 +77,11 @@ license = "Apache-2.0"
 notes = "Text-to-image and image editing family."
 
 [models.flux2_klein_4b]
+output = "image"
+inputs = ["image"]
+keyframes = false
+executable = false
+vram_gb = 10
 kind = "image"
 provider = "huggingface"
 repo_id = "black-forest-labs/FLUX.2-klein-4B"
@@ -55,6 +90,11 @@ license = "Apache-2.0"
 notes = "Compact FLUX.2 checkpoint with text-to-image and multi-reference editing support."
 
 [models.acestep15]
+output = "music"
+inputs = ["audio"]
+keyframes = false
+executable = false
+vram_gb = 4
 kind = "music"
 provider = "huggingface"
 repo_id = "ACE-Step/Ace-Step1.5"
